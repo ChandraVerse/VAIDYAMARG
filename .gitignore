@@ -1,0 +1,149 @@
+# ============================================================
+# VAIDYAMARG — .gitignore
+# ============================================================
+
+# ------------------------------------------------------------
+# ENVIRONMENT & SECRETS — NEVER COMMIT THESE!
+# ------------------------------------------------------------
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+*.pem
+*.key
+*.cert
+*.p12
+service-account.json
+google-services.json
+GoogleService-Info.plist
+
+# ------------------------------------------------------------
+# NODE.JS / NPM
+# ------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# ------------------------------------------------------------
+# NEXT.JS (Web Portal)
+# ------------------------------------------------------------
+web/.next/
+web/out/
+web/build/
+web/.vercel
+
+# ------------------------------------------------------------
+# REACT NATIVE / EXPO (Mobile App)
+# ------------------------------------------------------------
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+mobile/*.jks
+mobile/*.p8
+mobile/*.p12
+mobile/*.mobileprovision
+mobile/*.orig.*
+
+# ------------------------------------------------------------
+# PYTHON (AI Service)
+# ------------------------------------------------------------
+ai-service/__pycache__/
+ai-service/*.py[cod]
+ai-service/*$py.class
+ai-service/*.so
+ai-service/.Python
+ai-service/venv/
+ai-service/.venv/
+ai-service/env/
+ai-service/ENV/
+ai-service/dist/
+ai-service/build/
+ai-service/*.egg-info/
+ai-service/.pytest_cache/
+ai-service/htmlcov/
+ai-service/.coverage
+ai-service/coverage.xml
+
+# Trained ML models (too large for Git — use Git LFS or cloud storage)
+ai-service/models/*.h5
+ai-service/models/*.pkl
+ai-service/models/*.pt
+ai-service/models/*.onnx
+
+# ------------------------------------------------------------
+# PRESCRIPTION IMAGES — SENSITIVE HEALTH DATA
+# Never commit real prescription images!
+# ------------------------------------------------------------
+uploads/
+prescriptions/
+*.prescription.jpg
+*.prescription.png
+*.prescription.pdf
+
+# ------------------------------------------------------------
+# DATABASES (Local dev)
+# ------------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+postgres-data/
+mongo-data/
+redis-data/
+
+# ------------------------------------------------------------
+# DOCKER
+# ------------------------------------------------------------
+docker-compose.override.yml
+
+# ------------------------------------------------------------
+# BUILD OUTPUTS
+# ------------------------------------------------------------
+dist/
+build/
+*.tsbuildinfo
+
+# ------------------------------------------------------------
+# TESTING
+# ------------------------------------------------------------
+coverage/
+.nyc_output/
+jest.config.local.js
+
+# ------------------------------------------------------------
+# IDEs & EDITORS
+# ------------------------------------------------------------
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# ------------------------------------------------------------
+# LOGS
+# ------------------------------------------------------------
+logs/
+*.log
+
+# ------------------------------------------------------------
+# MISC
+# ------------------------------------------------------------
+.cache/
+.parcel-cache/
+.turbo/
+*.tgz
