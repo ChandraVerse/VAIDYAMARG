@@ -1,0 +1,32 @@
+# Add this service to the root docker-compose.yml
+# or run standalone with: docker-compose -f docker-compose.override.yml up
+
+version: '3.9'
+
+services:
+  ocr-service:
+    build:
+      context: ./ocr-service
+      dockerfile: Dockerfile
+    container_name: vaidyamarg_ocr
+    restart: unless-stopped
+    ports:
+      - '8000:8000'
+    env_file:
+      - ./ocr-service/.env
+    volumes:
+      # Mount GCloud service account JSON for Vision API
+      - ./credentials:/app/credentials:ro
+    networks:
+      - vaidyamarg_network
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  vaidyamarg_network:
+    external: true
