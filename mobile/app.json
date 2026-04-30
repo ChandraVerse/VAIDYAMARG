@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "VaidyaMarg",
+    "slug": "vaidyamarg",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "vaidyamarg",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#01696f"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "in.vaidyamarg.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "VaidyaMarg needs camera access to scan prescriptions.",
+        "NSPhotoLibraryUsageDescription": "VaidyaMarg needs photo access to upload prescriptions."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#01696f"
+      },
+      "package": "in.vaidyamarg.app",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      ["expo-notifications", { "icon": "./assets/notification-icon.png", "color": "#01696f" }],
+      ["expo-camera", { "cameraPermission": "Allow VaidyaMarg to scan your prescription." }]
+    ],
+    "experiments": { "typedRoutes": true }
+  }
+}
