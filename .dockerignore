@@ -1,0 +1,43 @@
+# Node
+node_modules
+npm-debug.log
+.npm
+
+# Build outputs
+dist
+build
+.next
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# Logs
+logs
+*.log
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+*.egg-info
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# Test
+coverage
+.nyc_output
