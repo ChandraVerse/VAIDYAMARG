@@ -1,7 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/auth.store';
 import { AdminShell } from '@/components/layout/AdminShell';
-import { LoginPage }   from '@/pages/Login';
+import { LoginPage }           from '@/pages/Login';
 import { DashboardPage }       from '@/pages/Dashboard';
 import { OrdersPage }          from '@/pages/Orders';
 import { OrderDetailPage }     from '@/pages/OrderDetail';
@@ -9,6 +9,8 @@ import { PrescriptionsPage }   from '@/pages/Prescriptions';
 import { MedicinesPage }       from '@/pages/Medicines';
 import { MedicineFormPage }    from '@/pages/MedicineForm';
 import { UsersPage }           from '@/pages/Users';
+import { PartnersPage }        from '@/pages/Partners';
+import { PartnerDetailPage }   from '@/pages/PartnerDetail';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuthStore();
@@ -37,6 +39,9 @@ export default function App() {
         <Route path="medicines/new"      element={<MedicineFormPage />} />
         <Route path="medicines/:id/edit" element={<MedicineFormPage />} />
         <Route path="users"              element={<UsersPage />} />
+        {/* Phase 4 — Partner management */}
+        <Route path="partners"           element={<PartnersPage />} />
+        <Route path="partners/:id"       element={<PartnerDetailPage />} />
       </Route>
     </Routes>
   );
