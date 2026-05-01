@@ -1,318 +1,176 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Alert, StatusBar,
+  ScrollView, View, Text, StyleSheet,
+  TouchableOpacity, ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import RazorpayCheckout from 'react-native-razorpay';
+import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
-import { Colors } from '../src/theme/colors';
-import { Button } from '../src/components/ui/Button';
-import { useCartStore } from '../src/store/cart.store';
-import { useAuthStore } from '../src/store/auth.store';
-import { ordersApi } from '../src/api/orders.api';
-import { usersApi } from '../src/api/users.api';
-import { prescriptionsApi } from '../src/api/prescriptions.api';
+import RazorpayCheckout from 'react-native-razorpay';
+import { Button, Card, Input } from '@/components/ui';
+import { useCartStore } from '@/stores/cart.store';
+import { useAuthStore } from '@/stores/auth.store';
+import { ordersApi } from '@/services/api';
+import { COLORS, FONT_SIZE, SPACING, RADIUS } from '@/constants';
 
 export default function CheckoutScreen() {
-  const router      = useRouter();
-  const user        = useAuthStore((s) => s.user);
-  const { items, totalAmount, totalSavings, clearCart } = useCartStore();
+  const { items, totalAmount, clearCart, requiresPrescription } = useCartStore();
+  const { user } = useAuthStore();
 
-  const [selectedAddress,      setSelectedAddress]      = useState<string | null>(null);
-  const [selectedPrescription, setSelectedPrescription] = useState<string | null>(null);
-  const [paymentMethod,        setPaymentMethod]        = useState<'ONLINE' | 'COD'>('ONLINE');
-
-  const { data: addresses } = useQuery({
-    queryKey: ['addresses'],
-    queryFn:  () => usersApi.getAddresses().then((r) => r.data.data),
+  const [address, setAddress] = useState({
+    line1: '', line2: '', city: '', state: '', pincode: '',
   });
+  const [loading, setLoading] = useState(false);
 
-  const { data: prescriptions } = useQuery({
-    queryKey: ['my-prescriptions'],
-    queryFn:  () => prescriptionsApi.myList().then((r) => r.data.data),
-  });
+  const total = totalAmount() + 40; // includes delivery
 
-  // Determine if any item needs prescription
-  const needsPrescription = items.some((i) => i.requiresPrescription);
+  const isAddressValid =
+    address.line1.trim().length > 3 &&
+    address.city.trim().length > 1 &&
+    address.state.trim().length > 1 &&
+    /^\d{6}$/.test(address.pincode);
 
-  const placeMutation = useMutation({
-    mutationFn: (data: any) => ordersApi.place(data),
-    onSuccess: async ({ data }) => {
-      const order = data.data;
+  const handlePlaceOrder = async () => {
+    if (!isAddressValid) {
+      Toast.show({ type: 'error', text1: 'Please fill in a valid delivery address.' });
+      return;
+    }
+    setLoading(true);
+    try {
+      // 1. Create order on backend → get Razorpay order ID
+      const { data: orderRes } = await ordersApi.create({
+        items: items.map((i) => ({ medicineId: i.medicineId, quantity: i.quantity })),
+        deliveryAddress: address,
+        totalAmount: total,
+      });
 
-      if (paymentMethod === 'COD') {
-        clearCart();
-        router.replace(`/order/${order.id}`);
-        return;
-      }
+      const razorpayOrderId = orderRes.data.razorpayOrderId;
+      const internalOrderId = orderRes.data.orderId;
 
-      // Razorpay payment
-      const options = {
-        description:  'VaidyaMarg Medicine Order',
-        image:        'https://i.imgur.com/3g7nmCe.png',
-        currency:     'INR',
-        key:          process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || '',
-        amount:       order.razorpayAmount, // paise
-        order_id:     order.razorpayOrderId,
-        name:         'VaidyaMarg',
+      // 2. Open Razorpay payment sheet
+      const paymentData = await RazorpayCheckout.open({
+        key:         'rzp_test_XXXXXXXXXXXXXXXX', // replaced by env at build time
+        amount:      Math.round(total * 100),
+        currency:    'INR',
+        name:        'VaidyaMarg',
+        description: `Order #${internalOrderId.slice(-8).toUpperCase()}`,
+        order_id:    razorpayOrderId,
         prefill: {
-          email: user?.email  || '',
-          contact: `+91${user?.phone}`,
-          name:  user?.name   || '',
+          contact: user?.phone ?? '',
+          email:   user?.email ?? '',
         },
-        theme: { color: Colors.primary },
-      };
+        theme: { color: COLORS.primary },
+      });
 
-      try {
-        const paymentData = await RazorpayCheckout.open(options);
+      // 3. Verify payment signature on backend
+      await ordersApi.verifyPayment({
+        orderId:           internalOrderId,
+        razorpayOrderId:   paymentData.razorpay_order_id,
+        razorpayPaymentId: paymentData.razorpay_payment_id,
+        razorpaySignature: paymentData.razorpay_signature,
+      });
 
-        await ordersApi.verifyPayment({
-          orderId:            order.id,
-          razorpayOrderId:    paymentData.razorpay_order_id,
-          razorpayPaymentId:  paymentData.razorpay_payment_id,
-          razorpaySignature:  paymentData.razorpay_signature,
-        });
-
-        clearCart();
-        Toast.show({ type: 'success', text1: '🎉 Payment successful!', text2: 'Your order has been placed.' });
-        router.replace(`/order/${order.id}`);
-
-      } catch (err: any) {
-        if (err.code !== 2) { // code 2 = user cancelled
-          Toast.show({ type: 'error', text1: 'Payment failed', text2: 'Please try again or use COD.' });
-        }
+      clearCart();
+      router.replace(`/order/${internalOrderId}`);
+      Toast.show({ type: 'success', text1: 'Order placed', text2: 'Payment confirmed.' });
+    } catch (err: any) {
+      if (err?.code !== 'PAYMENT_CANCELLED') {
+        Toast.show({ type: 'error', text1: 'Payment failed', text2: 'Please try again.' });
       }
-    },
-    onError: (err: any) => {
-      Toast.show({ type: 'error', text1: 'Order failed', text2: err?.response?.data?.message });
-    },
-  });
-
-  const handlePlaceOrder = () => {
-    if (!selectedAddress) {
-      Toast.show({ type: 'error', text1: 'Please select a delivery address' });
-      return;
+    } finally {
+      setLoading(false);
     }
-    if (needsPrescription && !selectedPrescription) {
-      Toast.show({ type: 'error', text1: 'Prescription required', text2: 'Please attach a verified prescription' });
-      return;
-    }
-
-    placeMutation.mutate({
-      items: items.map((i) => ({ medicineId: i.medicineId, quantity: i.quantity })),
-      addressId:      selectedAddress,
-      prescriptionId: selectedPrescription,
-      paymentMethod,
-    });
   };
 
-  const defaultAddr = addresses?.find((a: any) => a.isDefault) || addresses?.[0];
-  if (!selectedAddress && defaultAddr) setSelectedAddress(defaultAddr.id);
-
   return (
-    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
-      <StatusBar barStyle="dark-content" />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={styles.backText}>← Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.topBarTitle}>Checkout</Text>
+        <View style={{ width: 60 }} />
+      </View>
 
-        {/* ── Delivery Address ────────────────────────────────── */}
-        <Text style={styles.sectionTitle}>📍 Delivery Address</Text>
-        {addresses?.length === 0 ? (
-          <TouchableOpacity
-            style={styles.addAddr}
-            onPress={() => router.push('/profile')}
-          >
-            <Text style={styles.addAddrText}>+ Add a delivery address</Text>
-          </TouchableOpacity>
-        ) : (
-          addresses?.map((addr: any) => (
-            <TouchableOpacity
-              key={addr.id}
-              style={[styles.addrCard, selectedAddress === addr.id && styles.addrCardSelected]}
-              onPress={() => setSelectedAddress(addr.id)}
-              activeOpacity={0.8}
-            >
-              <View style={styles.radioOuter}>
-                {selectedAddress === addr.id && <View style={styles.radioInner} />}
-              </View>
-              <View style={styles.addrInfo}>
-                <Text style={styles.addrName}>{addr.label || addr.fullName}</Text>
-                <Text style={styles.addrLine}>{addr.line1}{addr.line2 ? `, ${addr.line2}` : ''}</Text>
-                <Text style={styles.addrLine}>{addr.city}, {addr.state} {addr.pincode}</Text>
-              </View>
-              {addr.isDefault && (
-                <View style={styles.defaultBadge}>
-                  <Text style={styles.defaultBadgeText}>Default</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          ))
+      <ScrollView contentContainerStyle={styles.scroll}>
+        {/* Delivery address */}
+        <Text style={styles.sectionTitle}>Delivery address</Text>
+        <Card style={styles.addressCard}>
+          <Input label="Address line 1" value={address.line1} onChangeText={(v) => setAddress((a) => ({ ...a, line1: v }))} placeholder="House / Flat / Building" />
+          <Input label="Address line 2 (optional)" value={address.line2} onChangeText={(v) => setAddress((a) => ({ ...a, line2: v }))} placeholder="Street / Area" />
+          <View style={styles.row}>
+            <Input label="City" value={address.city} onChangeText={(v) => setAddress((a) => ({ ...a, city: v }))} containerStyle={styles.half} />
+            <Input label="State" value={address.state} onChangeText={(v) => setAddress((a) => ({ ...a, state: v }))} containerStyle={styles.half} />
+          </View>
+          <Input label="Pincode" value={address.pincode} onChangeText={(v) => setAddress((a) => ({ ...a, pincode: v.replace(/\D/g, '').slice(0, 6) }))} placeholder="6-digit pincode" keyboardType="number-pad" maxLength={6} />
+        </Card>
+
+        {/* Prescription notice */}
+        {requiresPrescription() && (
+          <View style={styles.rxNotice}>
+            <Text style={styles.rxNoticeText}>
+              Your order contains prescription medicines. Please upload a valid prescription in the Prescriptions tab before placing your order.
+            </Text>
+          </View>
         )}
 
-        {/* ── Prescription (if needed) ─────────────────────────── */}
-        {needsPrescription && (
-          <>
-            <Text style={styles.sectionTitle}>📝 Prescription</Text>
-            {prescriptions?.filter((p: any) => p.status === 'VERIFIED').length === 0 ? (
-              <View style={styles.rxWarning}>
-                <Text style={styles.rxWarningText}>
-                  ⚠️ Some items need a verified prescription.
-                </Text>
-                <TouchableOpacity onPress={() => router.push('/(tabs)/prescription')}>
-                  <Text style={styles.rxLink}>Upload Prescription →</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              prescriptions
-                ?.filter((p: any) => p.status === 'VERIFIED')
-                .map((rx: any) => (
-                  <TouchableOpacity
-                    key={rx.id}
-                    style={[styles.addrCard, selectedPrescription === rx.id && styles.addrCardSelected]}
-                    onPress={() => setSelectedPrescription(rx.id)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.radioOuter}>
-                      {selectedPrescription === rx.id && <View style={styles.radioInner} />}
-                    </View>
-                    <View style={styles.addrInfo}>
-                      <Text style={styles.addrName}>✅ Verified Prescription</Text>
-                      <Text style={styles.addrLine}>
-                        {new Date(rx.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))
-            )}
-          </>
-        )}
-
-        {/* ── Order Items ─────────────────────────────────────── */}
-        <Text style={styles.sectionTitle}>🛒 Order Items ({items.length})</Text>
-        <View style={styles.itemsBox}>
-          {items.map((item, i) => (
-            <View
-              key={item.medicineId}
-              style={[styles.orderItem, i < items.length - 1 && { borderBottomWidth: 1, borderBottomColor: Colors.divider }]}
-            >
-              <Text style={styles.orderItemName} numberOfLines={1}>{item.name}</Text>
-              <Text style={styles.orderItemQty}>x{item.quantity}</Text>
-              <Text style={styles.orderItemPrice}>₹{(item.price * item.quantity).toFixed(2)}</Text>
+        {/* Order summary */}
+        <Text style={styles.sectionTitle}>Order summary</Text>
+        <Card style={styles.summaryCard}>
+          {items.map((item) => (
+            <View key={item.medicineId} style={styles.summaryRow}>
+              <Text style={styles.summaryName} numberOfLines={1}>{item.name} × {item.quantity}</Text>
+              <Text style={styles.summaryAmt}>₹{(item.price * item.quantity).toFixed(2)}</Text>
             </View>
           ))}
-        </View>
-
-        {/* ── Payment Method ─────────────────────────────────── */}
-        <Text style={styles.sectionTitle}>💳 Payment Method</Text>
-        <View style={styles.paymentRow}>
-          {[
-            { id: 'ONLINE', emoji: '📱', label: 'Online Payment', sub: 'UPI, Card, Net Banking' },
-            { id: 'COD',    emoji: '💵', label: 'Cash on Delivery', sub: 'Pay when delivered' },
-          ].map((method) => (
-            <TouchableOpacity
-              key={method.id}
-              style={[styles.payCard, paymentMethod === method.id && styles.payCardSelected]}
-              onPress={() => setPaymentMethod(method.id as any)}
-              activeOpacity={0.8}
-            >
-              <Text style={{ fontSize: 24, marginBottom: 6 }}>{method.emoji}</Text>
-              <Text style={styles.payLabel}>{method.label}</Text>
-              <Text style={styles.paySub}>{method.sub}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* ── Bill Summary ────────────────────────────────────── */}
-        <View style={styles.billBox}>
-          <View style={styles.billRow}>
-            <Text style={styles.billLabel}>MRP Total</Text>
-            <Text style={styles.billValue}>₹{(totalAmount + totalSavings).toFixed(2)}</Text>
+          <View style={styles.divider} />
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Delivery</Text>
+            <Text style={styles.summaryAmt}>₹40.00</Text>
           </View>
-          <View style={styles.billRow}>
-            <Text style={[styles.billLabel, { color: Colors.success }]}>Generic Savings</Text>
-            <Text style={[styles.billValue, { color: Colors.success }]}>-₹{totalSavings.toFixed(2)}</Text>
+          <View style={[styles.summaryRow, styles.totalRow]}>
+            <Text style={styles.totalLabel}>Total payable</Text>
+            <Text style={styles.totalAmt}>₹{total.toFixed(2)}</Text>
           </View>
-          <View style={styles.billRow}>
-            <Text style={styles.billLabel}>Delivery</Text>
-            <Text style={[styles.billValue, { color: Colors.success }]}>FREE</Text>
-          </View>
-          <View style={styles.billDivider} />
-          <View style={styles.billRow}>
-            <Text style={styles.billTotal}>Amount Payable</Text>
-            <Text style={styles.billTotalValue}>₹{totalAmount.toFixed(2)}</Text>
-          </View>
-        </View>
+        </Card>
 
-        <View style={{ height: 120 }} />
-      </ScrollView>
-
-      {/* Sticky Place Order */}
-      <View style={styles.stickyBottom}>
         <Button
-          title={
-            placeMutation.isPending ? 'Placing order…' :
-            paymentMethod === 'COD' ? `Place Order · ₹${totalAmount.toFixed(2)}` :
-            `Pay ₹${totalAmount.toFixed(2)} · Razorpay`
-          }
+          label={loading ? 'Processing…' : `Pay ₹${total.toFixed(2)}`}
           onPress={handlePlaceOrder}
-          loading={placeMutation.isPending}
+          disabled={loading || !isAddressValid}
+          loading={loading}
           fullWidth
           size="lg"
+          style={styles.payBtn}
         />
-      </View>
-    </View>
+
+        <Text style={styles.secure}>Secured by Razorpay · UPI · Cards · Net Banking</Text>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  content:          { padding: 16 },
-  sectionTitle:     { fontSize: 15, fontWeight: '700', color: Colors.text, marginBottom: 10, marginTop: 8 },
-  addAddr:          { backgroundColor: Colors.surface, borderRadius: 14, borderWidth: 1.5,
-                      borderColor: Colors.primary, borderStyle: 'dashed',
-                      padding: 16, alignItems: 'center', marginBottom: 16 },
-  addAddrText:      { fontSize: 14, color: Colors.primary, fontWeight: '600' },
-  addrCard:         { flexDirection: 'row', alignItems: 'flex-start', gap: 12,
-                      backgroundColor: Colors.surface, borderRadius: 14,
-                      borderWidth: 1.5, borderColor: Colors.border,
-                      padding: 14, marginBottom: 10 },
-  addrCardSelected: { borderColor: Colors.primary, backgroundColor: Colors.primary + '08' },
-  radioOuter:       { width: 20, height: 20, borderRadius: 10, borderWidth: 2,
-                      borderColor: Colors.border, justifyContent: 'center', alignItems: 'center', marginTop: 2 },
-  radioInner:       { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.primary },
-  addrInfo:         { flex: 1 },
-  addrName:         { fontSize: 14, fontWeight: '600', color: Colors.text },
-  addrLine:         { fontSize: 12, color: Colors.textMuted, marginTop: 2, lineHeight: 18 },
-  defaultBadge:     { backgroundColor: Colors.primary + '18', borderRadius: 6,
-                      paddingHorizontal: 8, paddingVertical: 3 },
-  defaultBadgeText: { fontSize: 10, color: Colors.primary, fontWeight: '700' },
-  rxWarning:        { backgroundColor: Colors.warning + '15', borderRadius: 14,
-                      borderWidth: 1, borderColor: Colors.warning + '40',
-                      padding: 14, marginBottom: 16 },
-  rxWarningText:    { fontSize: 13, color: Colors.text, marginBottom: 6 },
-  rxLink:           { fontSize: 13, color: Colors.primary, fontWeight: '600' },
-  itemsBox:         { backgroundColor: Colors.surface, borderRadius: 14,
-                      borderWidth: 1, borderColor: Colors.border, marginBottom: 16 },
-  orderItem:        { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 8 },
-  orderItemName:    { flex: 1, fontSize: 13, color: Colors.text, fontWeight: '500' },
-  orderItemQty:     { fontSize: 12, color: Colors.textMuted, minWidth: 24 },
-  orderItemPrice:   { fontSize: 13, fontWeight: '700', color: Colors.text },
-  paymentRow:       { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  payCard:          { flex: 1, backgroundColor: Colors.surface, borderRadius: 14,
-                      borderWidth: 1.5, borderColor: Colors.border,
-                      padding: 14, alignItems: 'center' },
-  payCardSelected:  { borderColor: Colors.primary, backgroundColor: Colors.primary + '08' },
-  payLabel:         { fontSize: 13, fontWeight: '600', color: Colors.text, textAlign: 'center' },
-  paySub:           { fontSize: 11, color: Colors.textMuted, textAlign: 'center', marginTop: 2 },
-  billBox:          { backgroundColor: Colors.surface, borderRadius: 16,
-                      borderWidth: 1, borderColor: Colors.border, padding: 16, marginBottom: 16 },
-  billRow:          { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  billLabel:        { fontSize: 13, color: Colors.textMuted },
-  billValue:        { fontSize: 13, color: Colors.text, fontWeight: '500' },
-  billDivider:      { height: 1, backgroundColor: Colors.divider, marginVertical: 6 },
-  billTotal:        { fontSize: 15, fontWeight: '700', color: Colors.text },
-  billTotalValue:   { fontSize: 15, fontWeight: '800', color: Colors.primary },
-  stickyBottom:     { position: 'absolute', bottom: 0, left: 0, right: 0,
-                      padding: 16, backgroundColor: Colors.surface,
-                      borderTopWidth: 1, borderTopColor: Colors.border },
+  container:     { flex: 1, backgroundColor: COLORS.bg },
+  topBar:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: SPACING.xl },
+  backText:      { fontSize: FONT_SIZE.base, color: COLORS.primary, fontWeight: '500' },
+  topBarTitle:   { fontSize: FONT_SIZE.lg, fontWeight: '700', color: COLORS.text },
+  scroll:        { padding: SPACING.xl, gap: SPACING.md, paddingBottom: SPACING.xxxl },
+  sectionTitle:  { fontSize: FONT_SIZE.base, fontWeight: '700', color: COLORS.text, marginTop: SPACING.sm },
+  addressCard:   { gap: SPACING.md },
+  row:           { flexDirection: 'row', gap: SPACING.sm },
+  half:          { flex: 1 },
+  rxNotice:      { backgroundColor: COLORS.warning + '18', borderRadius: RADIUS.md, padding: SPACING.md },
+  rxNoticeText:  { fontSize: FONT_SIZE.sm, color: COLORS.warning, lineHeight: 20 },
+  summaryCard:   { gap: SPACING.sm },
+  summaryRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  summaryName:   { fontSize: FONT_SIZE.sm, color: COLORS.text, flex: 1 },
+  summaryLabel:  { fontSize: FONT_SIZE.sm, color: COLORS.textMuted },
+  summaryAmt:    { fontSize: FONT_SIZE.sm, color: COLORS.text, fontWeight: '500' },
+  divider:       { height: 1, backgroundColor: COLORS.border, marginVertical: SPACING.xs },
+  totalRow:      { paddingTop: SPACING.sm },
+  totalLabel:    { fontSize: FONT_SIZE.base, fontWeight: '700', color: COLORS.text },
+  totalAmt:      { fontSize: FONT_SIZE.base, fontWeight: '800', color: COLORS.primary },
+  payBtn:        { marginTop: SPACING.md },
+  secure:        { fontSize: FONT_SIZE.xs, color: COLORS.textFaint, textAlign: 'center', marginTop: SPACING.sm },
 });
