@@ -13,6 +13,7 @@ export type RootStackParamList = {
   OrderTracking:       { orderId: string };
   PrescriptionUpload:  undefined;
   ReminderList:        undefined;
+  ReminderCreate:      undefined;   // ← new
 };
 
 export type MainTabParamList = {

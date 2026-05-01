@@ -16,6 +16,9 @@ import { PartnerNavigator } from './PartnerNavigator';
 // Partner order detail (pushed onto stack from PartnerNavigator)
 import { PartnerOrderDetailScreen } from '@/screens/partner/PartnerOrderDetailScreen';
 
+// Reminder screens
+import ReminderCreateScreen from '@/screens/reminders/ReminderCreateScreen';
+
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -49,6 +52,18 @@ export function RootNavigator() {
         // ── Customer app ──────────────────────────────────────────────────
         <>
           <Stack.Screen name="Main" component={MainTabs} />
+          <Stack.Screen
+            name="ReminderCreate"
+            component={ReminderCreateScreen}
+            options={{
+              headerShown: true,
+              title: 'New Reminder',
+              headerBackTitle: 'Reminders',
+              headerTintColor: '#01696f',
+              headerStyle: { backgroundColor: '#f7f6f2' },
+              headerShadowVisible: false,
+            }}
+          />
         </>
       )}
     </Stack.Navigator>
