@@ -1,278 +1,270 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
-  Logger,
+  ForbiddenException,
 } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
-import { PaymentService } from './payment.service';
-import { OrderGateway } from './order.gateway';
+import { PrismaService }       from '../../prisma/prisma.service';
 import { NotificationsService, NotificationType } from '../notifications/notifications.service';
-import { RemindersService } from '../reminders/reminders.service';
-import { PartnersService } from '../partners/partners.service';
-import { CreateOrderDto } from './dto/create-order.dto';
-import { VerifyPaymentDto } from './dto/verify-payment.dto';
+import { RemindersScheduler }  from '../notifications/reminders.scheduler';
+
+enum OrderStatus {
+  PENDING    = 'PENDING',
+  CONFIRMED  = 'CONFIRMED',
+  PROCESSING = 'PROCESSING',
+  SHIPPED    = 'SHIPPED',
+  DELIVERED  = 'DELIVERED',
+  CANCELLED  = 'CANCELLED',
+}
+
+const STATUS_TO_NOTIF: Partial<Record<OrderStatus, NotificationType>> = {
+  [OrderStatus.CONFIRMED]:  NotificationType.ORDER_CONFIRMED,
+  [OrderStatus.PROCESSING]: NotificationType.ORDER_PACKED,
+  [OrderStatus.SHIPPED]:    NotificationType.ORDER_DISPATCHED,
+  [OrderStatus.DELIVERED]:  NotificationType.ORDER_DELIVERED,
+  [OrderStatus.CANCELLED]:  NotificationType.ORDER_CANCELLED,
+};
 
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
 
   constructor(
-    private readonly prisma:       PrismaService,
-    private readonly paymentSvc:   PaymentService,
-    private readonly gateway:      OrderGateway,
-    private readonly notifications: NotificationsService,
-    private readonly reminders:    RemindersService,
-    private readonly partners:     PartnersService,
+    private readonly prisma:             PrismaService,
+    private readonly notifications:      NotificationsService,
+    private readonly remindersScheduler: RemindersScheduler,
   ) {}
 
-  // ─── CREATE ORDER ───────────────────────────────────────────────────────────────────
-  async create(dto: CreateOrderDto, userId: string) {
-    const itemsWithDetails = await Promise.all(
-      dto.items.map(async (item) => {
-        const medicine = await this.prisma.medicine.findUnique({
-          where: { id: item.medicineId },
-        });
-        if (!medicine || !medicine.isActive)
-          throw new NotFoundException(`Medicine ID "${item.medicineId}" not found`);
-        if (medicine.stock < item.quantity)
-          throw new BadRequestException(
-            `Insufficient stock for "${medicine.name}". Available: ${medicine.stock}`,
-          );
-        return {
-          ...item,
-          medicine,
-          unitPrice:  medicine.genericPrice,
-          totalPrice: +(medicine.genericPrice * item.quantity).toFixed(2),
-        };
-      }),
-    );
+  // ─── Place Order ─────────────────────────────────────────────────────────────
+  async placeOrder(userId: string, dto: {
+    addressId:      string;
+    items:          { medicineId: string; quantity: number }[];
+    prescriptionId?: string;
+    couponCode?:    string;
+  }) {
+    // Validate address belongs to user
+    const address = await this.prisma.address.findFirst({
+      where: { id: dto.addressId, userId },
+    });
+    if (!address) throw new NotFoundException('Address not found');
 
-    const totalAmount = +itemsWithDetails
-      .reduce((sum, i) => sum + i.totalPrice, 0)
-      .toFixed(2);
-
-    const razorpayOrder = await this.paymentSvc.createOrder(totalAmount);
-
-    const order = await this.prisma.order.create({
-      data: {
-        userId,
-        prescriptionId:  dto.prescriptionId ?? null,
-        totalAmount,
-        deliveryAddress: dto.deliveryAddress,
-        notes:           dto.notes ?? null,
-        status:          'PENDING',
-        paymentStatus:   'PENDING',
-        paymentId:       razorpayOrder.id,
-        items: {
-          create: itemsWithDetails.map((i) => ({
-            medicineId: i.medicineId,
-            quantity:   i.quantity,
-            unitPrice:  i.unitPrice,
-            totalPrice: i.totalPrice,
-          })),
-        },
-      },
-      include: { items: { include: { medicine: true } } },
+    // Fetch medicines + validate stock
+    const medicineIds = dto.items.map((i) => i.medicineId);
+    const medicines   = await this.prisma.medicine.findMany({
+      where: { id: { in: medicineIds } },
     });
 
+    const itemsData: {
+      medicineId: string;
+      medicineName: string;
+      quantity: number;
+      unitPrice: number;
+      totalPrice: number;
+    }[] = [];
+    let totalAmount = 0;
+
+    for (const lineItem of dto.items) {
+      const med = medicines.find((m) => m.id === lineItem.medicineId);
+      if (!med) throw new NotFoundException(`Medicine ${lineItem.medicineId} not found`);
+      if (med.stock < lineItem.quantity)
+        throw new BadRequestException(`Insufficient stock for ${med.name}`);
+
+      const lineTotal = Number(med.discountedPrice ?? med.mrp) * lineItem.quantity;
+      totalAmount += lineTotal;
+
+      itemsData.push({
+        medicineId:   med.id,
+        medicineName: med.name,
+        quantity:     lineItem.quantity,
+        unitPrice:    Number(med.discountedPrice ?? med.mrp),
+        totalPrice:   lineTotal,
+      });
+    }
+
+    // Create order + decrement stock in a transaction
+    const order = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
+        data: {
+          userId,
+          addressId:      dto.addressId,
+          prescriptionId: dto.prescriptionId,
+          status:         OrderStatus.PENDING,
+          totalAmount,
+          paymentStatus:  'PENDING',
+          items: { create: itemsData },
+        },
+        include: { items: true },
+      });
+
+      // Decrement stock
+      await Promise.all(
+        dto.items.map((i) =>
+          tx.medicine.update({
+            where: { id: i.medicineId },
+            data:  { stock: { decrement: i.quantity } },
+          }),
+        ),
+      );
+
+      return created;
+    });
+
+    // Push: order placed
     await this.notifications.send(userId, NotificationType.ORDER_PLACED, {
       orderId: order.id,
-      amount:  totalAmount,
+      amount:  order.totalAmount,
     });
 
-    this.logger.log(`Order created: ${order.id} | ₹${totalAmount}`);
-
-    return {
-      order,
-      payment: {
-        razorpayOrderId: razorpayOrder.id,
-        amount:          razorpayOrder.amount,
-        currency:        razorpayOrder.currency,
-        keyId:           this.paymentSvc.getKeyId(),
-      },
-    };
+    this.logger.log(`Order placed: ${order.id} by user ${userId}`);
+    return { success: true, data: order };
   }
 
-  // ─── VERIFY PAYMENT ───────────────────────────────────────────────────────────────
-  async verifyPayment(dto: VerifyPaymentDto, userId: string) {
-    const { orderId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = dto;
+  // ─── Get User Orders ─────────────────────────────────────────────────────────
+  async getUserOrders(userId: string) {
+    const orders = await this.prisma.order.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        items:   { select: { medicineName: true, quantity: true, totalPrice: true } },
+        address: { select: { street: true, city: true, pincode: true } },
+      },
+    });
+    return { success: true, data: orders, total: orders.length };
+  }
 
-    const isValid = this.paymentSvc.verifySignature(
-      razorpayOrderId, razorpayPaymentId, razorpaySignature,
-    );
-    if (!isValid)
-      throw new BadRequestException('Payment verification failed. Invalid signature.');
-
-    const order = await this.prisma.order.findFirst({ where: { id: orderId, userId } });
-    if (!order) throw new NotFoundException('Order not found');
-
-    const updatedOrder = await this.prisma.order.update({
-      where:   { id: orderId },
-      data:    { paymentStatus: 'PAID', paymentId: razorpayPaymentId, status: 'CONFIRMED' },
-      include: { items: { include: { medicine: true } } },
+  // ─── Get Single Order ─────────────────────────────────────────────────────────
+  async getOrderById(userId: string, orderId: string, isAdmin = false) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items:        true,
+        address:      true,
+        prescription: { select: { imageUrl: true, status: true } },
+        user:         isAdmin ? { select: { name: true, phone: true, email: true } } : false,
+      },
     });
 
-    // Deduct stock for every item
+    if (!order) throw new NotFoundException('Order not found');
+    if (!isAdmin && order.userId !== userId)
+      throw new ForbiddenException('Access denied');
+
+    return { success: true, data: order };
+  }
+
+  // ─── Update Order Status (admin / partner) ────────────────────────────────────
+  async updateOrderStatus(
+    orderId: string,
+    newStatus: OrderStatus,
+    updatedBy: 'ADMIN' | 'PARTNER',
+  ) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Order not found');
+
+    // Validate transition
+    const ALLOWED_NEXT: Record<OrderStatus, OrderStatus[]> = {
+      [OrderStatus.PENDING]:    [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
+      [OrderStatus.CONFIRMED]:  [OrderStatus.PROCESSING, OrderStatus.CANCELLED],
+      [OrderStatus.PROCESSING]: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
+      [OrderStatus.SHIPPED]:    [OrderStatus.DELIVERED],
+      [OrderStatus.DELIVERED]:  [],
+      [OrderStatus.CANCELLED]:  [],
+    };
+
+    if (!ALLOWED_NEXT[order.status as OrderStatus]?.includes(newStatus)) {
+      throw new BadRequestException(
+        `Cannot move order from ${order.status} to ${newStatus}`,
+      );
+    }
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data:  {
+        status: newStatus,
+        ...(newStatus === OrderStatus.DELIVERED && { deliveredAt: new Date() }),
+      },
+    });
+
+    // Push notification for status change
+    const notifType = STATUS_TO_NOTIF[newStatus];
+    if (notifType) {
+      await this.notifications.send(order.userId, notifType, {
+        orderId:      order.id,
+        amount:       order.totalAmount,
+        savings:      (order as any).savings ?? 0,
+        trackingNote: (order as any).trackingNote ?? '',
+      });
+    }
+
+    // Auto-enroll refill reminders when delivered
+    if (newStatus === OrderStatus.DELIVERED) {
+      await this.remindersScheduler.enrollRemindersForOrder(order.id, order.userId);
+    }
+
+    this.logger.log(`Order ${orderId}: ${order.status} → ${newStatus} by ${updatedBy}`);
+    return { success: true, data: updated };
+  }
+
+  // ─── Cancel Order (user self-cancel) ─────────────────────────────────────────
+  async cancelOrder(userId: string, orderId: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.userId !== userId) throw new ForbiddenException('Access denied');
+
+    if (!['PENDING', 'CONFIRMED'].includes(order.status)) {
+      throw new BadRequestException('Order cannot be cancelled at this stage');
+    }
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data:  { status: OrderStatus.CANCELLED },
+    });
+
+    // Restore stock
+    const items = await this.prisma.orderItem.findMany({ where: { orderId } });
     await Promise.all(
-      updatedOrder.items.map((item) =>
+      items.map((i) =>
         this.prisma.medicine.update({
-          where: { id: item.medicineId },
-          data:  { stock: { decrement: item.quantity } },
+          where: { id: i.medicineId },
+          data:  { stock: { increment: i.quantity } },
         }),
       ),
     );
 
-    await this.notifications.send(userId, NotificationType.PAYMENT_SUCCESS, {
-      orderId: order.id, amount: order.totalAmount,
-    });
-    await this.notifications.send(userId, NotificationType.ORDER_CONFIRMED, {
-      orderId: order.id,
-    });
-
-    this.gateway.emitOrderUpdate(order.id, userId, 'CONFIRMED');
-
-    this.logger.log(`Payment verified for order ${orderId}`);
-    return {
-      message: '🎉 Payment successful! Your order is confirmed.',
-      order: updatedOrder,
-    };
-  }
-
-  // ─── ORDER HISTORY ─────────────────────────────────────────────────────────────────
-  async getHistory(userId: string) {
-    const orders = await this.prisma.order.findMany({
-      where:   { userId },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        items: {
-          include: {
-            medicine: { select: { id: true, name: true, genericName: true, imageUrl: true } },
-          },
-        },
-      },
-    });
-    return { orders, total: orders.length };
-  }
-
-  // ─── TRACK ORDER ───────────────────────────────────────────────────────────────────
-  async track(orderId: string, userId: string) {
-    const order = await this.prisma.order.findFirst({
-      where:  { id: orderId, userId },
-      select: {
-        id: true, status: true, paymentStatus: true,
-        createdAt: true, updatedAt: true,
-        deliveryAddress: true, totalAmount: true,
-      },
-    });
-    if (!order) throw new NotFoundException('Order not found');
-
-    const timeline = [
-      { step: 'PENDING',    label: 'Order Placed',     done: true },
-      { step: 'CONFIRMED',  label: 'Order Confirmed',  done: ['CONFIRMED','PROCESSING','DISPATCHED','DELIVERED'].includes(order.status) },
-      { step: 'PROCESSING', label: 'Being Packed',     done: ['PROCESSING','DISPATCHED','DELIVERED'].includes(order.status) },
-      { step: 'DISPATCHED', label: 'Out for Delivery', done: ['DISPATCHED','DELIVERED'].includes(order.status) },
-      { step: 'DELIVERED',  label: 'Delivered',        done: order.status === 'DELIVERED' },
-    ];
-
-    return { order, timeline };
-  }
-
-  // ─── FIND ONE ──────────────────────────────────────────────────────────────────────
-  async findOne(orderId: string, userId: string) {
-    const order = await this.prisma.order.findFirst({
-      where:   { id: orderId, userId },
-      include: { items: { include: { medicine: true } } },
-    });
-    if (!order) throw new NotFoundException('Order not found');
-    return order;
-  }
-
-  // ─── CANCEL ────────────────────────────────────────────────────────────────────────
-  async cancel(orderId: string, userId: string) {
-    const order = await this.prisma.order.findFirst({ where: { id: orderId, userId } });
-    if (!order) throw new NotFoundException('Order not found');
-
-    if (!['PENDING','CONFIRMED'].includes(order.status))
-      throw new BadRequestException(
-        `Order cannot be cancelled. Current status: ${order.status}`,
-      );
-
-    const updated = await this.prisma.order.update({
-      where: { id: orderId },
-      data:  { status: 'CANCELLED' },
-    });
-
     await this.notifications.send(userId, NotificationType.ORDER_CANCELLED, {
       orderId: order.id,
     });
-    this.gateway.emitOrderUpdate(orderId, userId, 'CANCELLED');
 
-    this.logger.log(`Order cancelled: ${orderId}`);
-    return { message: 'Order cancelled successfully', order: updated };
+    return { success: true, data: updated };
   }
 
-  // ─── UPDATE STATUS (Admin / Pharmacist) ───────────────────────────────────────────
-  async updateStatus(orderId: string, status: string) {
-    const validStatuses = ['CONFIRMED','PROCESSING','DISPATCHED','DELIVERED','CANCELLED'];
-    if (!validStatuses.includes(status))
-      throw new BadRequestException(`Invalid status: ${status}`);
+  // ─── Admin: list all orders ───────────────────────────────────────────────────
+  async getAllOrders(filters: {
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const page  = filters.page  ?? 1;
+    const limit = filters.limit ?? 20;
+    const skip  = (page - 1) * limit;
 
-    const order = await this.prisma.order.findUnique({
-      where:   { id: orderId },
-      include: { items: { include: { medicine: true } } },
-    });
-    if (!order) throw new NotFoundException('Order not found');
+    const where = filters.status ? { status: filters.status as OrderStatus } : {};
 
-    const updated = await this.prisma.order.update({
-      where: { id: orderId },
-      data:  { status: status as any },
-    });
+    const [orders, total] = await this.prisma.$transaction([
+      this.prisma.order.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user:    { select: { name: true, phone: true } },
+          address: { select: { city: true, pincode: true } },
+          items:   { select: { medicineName: true, quantity: true } },
+        },
+      }),
+      this.prisma.order.count({ where }),
+    ]);
 
-    // ── Notification per status ───────────────────────────────────────────────
-    const notifMap: Record<string, NotificationType> = {
-      CONFIRMED:  NotificationType.ORDER_CONFIRMED,
-      PROCESSING: NotificationType.ORDER_PACKED,
-      DISPATCHED: NotificationType.ORDER_DISPATCHED,
-      DELIVERED:  NotificationType.ORDER_DELIVERED,
-      CANCELLED:  NotificationType.ORDER_CANCELLED,
-    };
-    if (notifMap[status]) {
-      await this.notifications.send(order.userId, notifMap[status], {
-        orderId: order.id,
-        trackingNote: status === 'DISPATCHED' ? 'Estimated delivery: today' : undefined,
-        savings: status === 'DELIVERED'
-          ? +(order.items.reduce(
-              (s, i) => s + ((i.medicine as any).mrp - i.unitPrice) * i.quantity, 0,
-            )).toFixed(2)
-          : undefined,
-      });
-    }
-
-    // ── Real-time Socket.io push ─────────────────────────────────────────────────
-    this.gateway.emitOrderUpdate(orderId, order.userId, status);
-
-    // ── On DELIVERED: auto-enroll reminders + record partner earning ───────────
-    if (status === 'DELIVERED') {
-      // Refill reminders for chronic medicines in this order
-      await this.reminders.autoEnrollFromOrder(order.userId, orderId);
-
-      // Partner earning row — idempotent upsert, safe against duplicate webhooks.
-      // Looks up whether the order's patient is served by a partner pharmacy.
-      // If no partner pharmacy is linked, recordEarning() is a silent no-op.
-      const pharmacy = await this.prisma.pharmacy.findFirst({
-        where: { ownerId: order.userId, status: 'APPROVED', isActive: true },
-      });
-      if (pharmacy) {
-        await this.partners.recordEarning(
-          pharmacy.id,
-          orderId,
-          order.totalAmount,
-        );
-        this.logger.log(`Partner earning recorded: pharmacy ${pharmacy.id} | order ${orderId}`);
-      }
-    }
-
-    return { message: `Order status updated to ${status}`, order: updated };
+    return { success: true, data: orders, total, page, limit };
   }
 }

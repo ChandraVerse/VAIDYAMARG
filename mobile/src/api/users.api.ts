@@ -1,13 +1,50 @@
 import apiClient from './client';
 
 export const usersApi = {
-  profile:        ()           => apiClient.get('/users/profile'),
-  updateProfile:  (data: any)  => apiClient.patch('/users/profile', data),
-  dashboard:      ()           => apiClient.get('/users/dashboard'),
-  getAddresses:   ()           => apiClient.get('/users/addresses'),
-  addAddress:     (data: any)  => apiClient.post('/users/addresses', data),
-  setDefault:     (id: string) => apiClient.patch(`/users/addresses/${id}/default`),
-  deleteAddress:  (id: string) => apiClient.delete(`/users/addresses/${id}`),
-  getHealthRecords:()          => apiClient.get('/users/health-records'),
-  addHealthRecord:(data: any)  => apiClient.post('/users/health-records', data),
+  /**
+   * GET /users/me
+   * Returns the authenticated user's profile.
+   */
+  getProfile: () =>
+    apiClient.get('/users/me'),
+
+  /**
+   * PATCH /users/me
+   * Update name / phone / email.
+   */
+  updateProfile: (data: { name?: string; phone?: string; email?: string }) =>
+    apiClient.patch('/users/me', data),
+
+  /**
+   * PATCH /users/me/fcm-token
+   * Register or refresh the FCM push token for this device.
+   * Called automatically by useNotifications() on app boot.
+   */
+  registerFcmToken: (token: string) =>
+    apiClient.patch('/users/me/fcm-token', { token }),
+
+  /**
+   * GET /users/me/addresses
+   */
+  getAddresses: () =>
+    apiClient.get('/users/me/addresses'),
+
+  /**
+   * POST /users/me/addresses
+   */
+  addAddress: (data: {
+    name: string;
+    phone: string;
+    street: string;
+    city: string;
+    state: string;
+    pincode: string;
+    isDefault?: boolean;
+  }) => apiClient.post('/users/me/addresses', data),
+
+  /**
+   * DELETE /users/me/addresses/:id
+   */
+  deleteAddress: (id: string) =>
+    apiClient.delete(`/users/me/addresses/${id}`),
 };
