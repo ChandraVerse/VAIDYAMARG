@@ -2,9 +2,9 @@ version: '3.9'
 
 services:
 
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   # PostgreSQL
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: vm_postgres
@@ -25,9 +25,9 @@ services:
     networks:
       - vm_net
 
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   # Redis
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: vm_redis
@@ -45,9 +45,9 @@ services:
     networks:
       - vm_net
 
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   # Python OCR Service
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   ocr:
     build:
       context: ./ocr-service
@@ -55,15 +55,16 @@ services:
     container_name: vm_ocr
     restart: unless-stopped
     environment:
-      PORT: 8000
+      PORT:            8000
+      INTERNAL_SECRET: ${INTERNAL_SECRET}
     ports:
       - '8000:8000'
     networks:
       - vm_net
 
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   # NestJS Backend API
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   api:
     build:
       context: ./backend
@@ -80,26 +81,50 @@ services:
     environment:
       NODE_ENV:            production
       PORT:                3000
+
+      # Database
       DATABASE_URL:        postgresql://${POSTGRES_USER:-vaidyamarg}:${POSTGRES_PASSWORD:-secret}@postgres:5432/${POSTGRES_DB:-vaidyamarg}
       REDIS_URL:           redis://:${REDIS_PASSWORD:-redispass}@redis:6379
+
+      # Auth
       JWT_SECRET:          ${JWT_SECRET}
+      JWT_REFRESH_SECRET:  ${JWT_REFRESH_SECRET}
+      JWT_EXPIRES_IN:      ${JWT_EXPIRES_IN:-7d}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
+
+      # Cloudinary
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
       CLOUDINARY_API_KEY:    ${CLOUDINARY_API_KEY}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+
+      # Payments
       RAZORPAY_KEY_ID:       ${RAZORPAY_KEY_ID}
       RAZORPAY_KEY_SECRET:   ${RAZORPAY_KEY_SECRET}
-      TWILIO_ACCOUNT_SID:    ${TWILIO_ACCOUNT_SID}
-      TWILIO_AUTH_TOKEN:     ${TWILIO_AUTH_TOKEN}
-      TWILIO_PHONE_NUMBER:   ${TWILIO_PHONE_NUMBER}
+
+      # OTP / SMS — MSG91 (https://msg91.com)
+      # otp.service.ts calls the MSG91 v5 API.
+      # Do NOT add TWILIO_* variables here — Twilio is not used.
+      MSG91_AUTH_KEY:        ${MSG91_AUTH_KEY}
+      MSG91_TEMPLATE_ID:     ${MSG91_TEMPLATE_ID}
+      MSG91_SENDER_ID:       ${MSG91_SENDER_ID:-VDYMRG}
+
+      # Firebase Cloud Messaging (push notifications)
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON}
+
+      # OCR microservice
       OCR_SERVICE_URL:       http://ocr:8000
+      INTERNAL_SECRET:       ${INTERNAL_SECRET}
+
+      # CORS
+      CORS_ORIGINS:          ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3001}
     ports:
       - '3000:3000'
     networks:
       - vm_net
 
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   # Admin Panel (Nginx-served static build)
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   admin:
     build:
       context: ./admin
