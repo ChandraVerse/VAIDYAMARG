@@ -8,15 +8,17 @@ import { AdminOrdersService } from './admin-orders.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { RemindersModule } from '../reminders/reminders.module';
+import { PartnersModule } from '../partners/partners.module';
 
 @Module({
   imports: [
     PrismaModule,
-    NotificationsModule, // provides NotificationsService
-    RemindersModule,     // provides RemindersService
+    NotificationsModule, // NotificationsService
+    RemindersModule,     // RemindersService
+    PartnersModule,      // PartnersService — recordEarning() on DELIVERED
   ],
   controllers: [OrdersController, AdminOrdersController],
-  providers: [OrdersService, PaymentService, OrderGateway, AdminOrdersService],
-  exports: [OrdersService],
+  providers:   [OrdersService, PaymentService, OrderGateway, AdminOrdersService],
+  exports:     [OrdersService],
 })
 export class OrdersModule {}
