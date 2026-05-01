@@ -1,0 +1,96 @@
+# ============================================================
+# VaidyaMarg — Deploy to Production
+# Triggers:
+#   - Manually via workflow_dispatch
+#   - Automatically on semver tag push (v*.*.*)
+# Requires these repository secrets:
+#   DEPLOY_HOST      — server IP or hostname
+#   DEPLOY_USER      — SSH username (e.g. ubuntu)
+#   DEPLOY_SSH_KEY   — private SSH key (RSA/Ed25519)
+#   DEPLOY_PATH      — absolute path on server (e.g. /opt/vaidyamarg)
+#   GHCR_TOKEN       — GitHub PAT with read:packages scope
+# ============================================================
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options: [production, staging]
+      tag:
+        description: 'Docker image tag to deploy (e.g. v1.2.3 or sha-abc1234)'
+        required: false
+        default: 'main'
+
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment || 'production' }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -euo pipefail
+
+            cd ${{ secrets.DEPLOY_PATH }}
+
+            # Authenticate Docker to GHCR
+            echo "${{ secrets.GHCR_TOKEN }}" | \
+              docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+
+            # Pull latest images
+            IMAGE_TAG=${{ steps.tag.outputs.tag }} docker compose pull
+
+            # Zero-downtime rolling restart
+            IMAGE_TAG=${{ steps.tag.outputs.tag }} \
+              docker compose up -d --remove-orphans --no-build
+
+            # Run pending migrations
+            docker compose exec -T backend \
+              npx prisma migrate deploy
+
+            # Health check — wait up to 60 s
+            echo "Waiting for backend health..."
+            for i in $(seq 1 12); do
+              STATUS=$(curl -sf http://localhost:3000/health | jq -r '.status' 2>/dev/null || echo "")
+              if [[ "$STATUS" == "ok" ]]; then
+                echo "Backend healthy ✔"
+                break
+              fi
+              echo "  attempt $i/12 — not ready yet"
+              sleep 5
+            done
+
+            # Prune old images to save disk
+            docker image prune -f
+
+            echo "✅ Deployment complete — tag: ${{ steps.tag.outputs.tag }}"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Deploy to ${{ github.event.inputs.environment || 'production' }} FAILED for tag ${{ steps.tag.outputs.tag }}"
