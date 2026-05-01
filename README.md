@@ -54,7 +54,7 @@ In India, branded medicines cost **3–10x more** than their generic equivalents
 | | |
 |---|---|
 | **Founded** | 2026 |
-| **Based in** | Bhatpara, West Bengal, India |
+| **Based in** | Kolkata, West Bengal, India |
 | **Target Market** | 1.4 Billion Indians — starting with Tier 2 and Tier 3 cities |
 
 ---
