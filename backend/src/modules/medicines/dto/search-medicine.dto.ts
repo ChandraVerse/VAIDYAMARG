@@ -3,23 +3,31 @@ import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class SearchMedicineDto {
-  @ApiPropertyOptional({ example: 'paracetamol', description: 'Medicine name (brand or generic)' })
+  @ApiPropertyOptional({
+    description: 'Search query — brand name, generic name, or molecule',
+    example: 'Amoxicillin',
+  })
   @IsOptional()
   @IsString()
   q?: string;
 
-  @ApiPropertyOptional({ example: 1, default: 1 })
+  @ApiPropertyOptional({ description: 'Filter by category', example: 'Antibiotic' })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @ApiPropertyOptional({ description: 'Page number (default 1)', example: 1 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   page?: number = 1;
 
-  @ApiPropertyOptional({ example: 10, default: 10 })
+  @ApiPropertyOptional({ description: 'Results per page (max 50)', example: 20 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(50)
-  limit?: number = 10;
+  limit?: number = 20;
 }

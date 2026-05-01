@@ -1,24 +1,25 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class VerifyPaymentDto {
-  @ApiProperty({ example: 'clx1234abcd', description: 'Our internal Order ID' })
+  @ApiProperty({
+    description: 'Razorpay payment ID returned after successful payment',
+    example: 'pay_Abcd1234XYZ',
+  })
   @IsString()
-  @IsNotEmpty()
-  orderId: string;
-
-  @ApiProperty({ example: 'order_NiRmaIYWjFCzfW', description: 'Razorpay Order ID' })
-  @IsString()
-  @IsNotEmpty()
-  razorpayOrderId: string;
-
-  @ApiProperty({ example: 'pay_NiRmaIYWjFCzfW', description: 'Razorpay Payment ID' })
-  @IsString()
-  @IsNotEmpty()
   razorpayPaymentId: string;
 
-  @ApiProperty({ example: 'abc123...', description: 'Razorpay HMAC-SHA256 signature' })
+  @ApiProperty({
+    description: 'Razorpay order ID',
+    example: 'order_Abcd1234XYZ',
+  })
   @IsString()
-  @IsNotEmpty()
+  razorpayOrderId: string;
+
+  @ApiProperty({
+    description: 'HMAC-SHA256 signature from Razorpay for payment verification',
+    example: 'abc123def456...',
+  })
+  @IsString()
   razorpaySignature: string;
 }

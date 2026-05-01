@@ -1,6 +1,12 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UploadPrescriptionDto {
-  @ApiProperty({ type: 'string', format: 'binary', description: 'Prescription image (JPEG/PNG/WEBP/PDF, max 5MB)' })
-  file: any;
+  @ApiPropertyOptional({
+    description: 'Optional note from the patient about the prescription',
+    example: 'Post-surgery follow-up prescription from Dr. Mehta',
+  })
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

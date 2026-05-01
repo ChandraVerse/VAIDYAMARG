@@ -10,13 +10,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-01696f.svg?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-In%20Development-orange?style=flat-square)]()
 [![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%20%7C%20Web-blue?style=flat-square)]()
-[![Stack](https://img.shields.io/badge/Stack-React%20Native%20%7C%20Node.js%20%7C%20Python-informational?style=flat-square)]()
+[![Stack](https://img.shields.io/badge/Stack-React%20Native%20%7C%20NestJS%20%7C%20Python-informational?style=flat-square)]()
 [![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen?style=flat-square)]()
 [![Made in India](https://img.shields.io/badge/Made%20in-India-FF9933?style=flat-square)]()
 
 ---
 
-> *"Branded medicine at Rs. 450? The same generic costs Rs. 65. VaidyaMarg bridges that gap."*
+> *"Branded medicine at Rs. 450? The same generic costs Rs. 65. VaidyaMarg bridges that gap."
 
 [Download App](#) · [Web Portal](#) · [Documentation](#) · [Report Bug](../../issues) · [Request Feature](../../issues)
 
@@ -88,7 +88,7 @@ VaidyaMarg addresses the problem in three steps:
 - **Smart Medicine Search** — Search by brand name, view generic alternatives side by side
 - **Price Comparison** — Real-time branded vs. generic price difference
 - **Easy Ordering** — Add to cart and checkout in under 60 seconds
-- **Real-time Order Tracking** — Live delivery status updates
+- **Real-time Order Tracking** — Live delivery status updates via Socket.io
 - **Refill Reminders** — Monthly reminders for chronic patients (diabetes, hypertension, thyroid)
 - **Digital Health Records** — All prescriptions and order history stored securely
 - **Multiple Payment Options** — UPI, Cards, Net Banking, Cash on Delivery
@@ -134,7 +134,7 @@ VaidyaMarg addresses the problem in three steps:
 | Node.js + NestJS | Core REST API — orders, users, medicines |
 | Prisma ORM | PostgreSQL schema management and queries |
 | Socket.io | Real-time order tracking |
-| JWT + OTP (MSG91) | Secure authentication |
+| JWT + OTP (MSG91) | Secure authentication — **MSG91 is the sole OTP/SMS provider** |
 | Bull + Redis | Background job queue for reminders and notifications |
 
 ### OCR Microservice
@@ -143,9 +143,9 @@ VaidyaMarg addresses the problem in three steps:
 |---|---|
 | Python + FastAPI | OCR microservice runtime |
 | Google Cloud Vision | High-accuracy prescription text detection (~95%) |
-| Tesseract OCR | Open-source fallback engine (~75%) |
+| Tesseract OCR | Open-source fallback engine (~75%); supports English, Hindi, Bengali |
 | Pillow | Image preprocessing — contrast, sharpness, upscaling |
-| Tenacity | Retry logic for backend callbacks |
+| Tenacity | Retry logic for backend callbacks (5 attempts, exponential back-off) |
 
 ### Database and Storage
 
@@ -160,15 +160,15 @@ VaidyaMarg addresses the problem in three steps:
 | Technology | Purpose |
 |---|---|
 | Razorpay | Payments — UPI, Cards, COD (India-first) |
-| Firebase Cloud Messaging | Push notifications |
+| Firebase Cloud Messaging | Push notifications (Android + iOS) |
 | MSG91 | OTP verification and SMS alerts |
 
 ### DevOps and Infrastructure
 
 | Technology | Purpose |
 |---|---|
-| Docker + Docker Compose | Containerisation of all services |
-| GitHub Actions | CI/CD pipeline — automated deploy on merge |
+| Docker + Docker Compose | Containerisation of all 5 services |
+| GitHub Actions | CI/CD pipeline — lint, test, and build on every push |
 | AWS / Railway.app | Cloud hosting (Railway for MVP, AWS for scale) |
 | Nginx | Reverse proxy and load balancer |
 
@@ -188,7 +188,7 @@ VaidyaMarg addresses the problem in three steps:
          |                  |                  |
 +--------v--------+ +-------v-------+ +--------v-----------+
 |  Node.js NestJS | | Python FastAPI | |  Socket.io         |
-|  REST API       | | OCR Service   | |  Real-time Updates |
+|  REST API       | | OCR Service   | |  Real-time Tracking|
 +--------+--------+ +-------+-------+ +--------------------+
          |                  |
 +--------v------------------v-----------------------------+
@@ -214,6 +214,7 @@ npm >= 10.x
 python >= 3.12
 docker and docker-compose
 git
+tesseract-ocr (auto-installed via Docker)
 ```
 
 ### Installation
@@ -239,14 +240,22 @@ cp ocr-service/.env.example ocr-service/.env
 docker-compose up --build
 ```
 
-**4. Start services individually (development)**
+**4. Seed the database (first run)**
+
+```bash
+# After containers are up:
+docker-compose exec api npx prisma migrate dev
+docker-compose exec api npx ts-node prisma/seed.ts
+```
+
+**5. Start services individually (development)**
 
 ```bash
 # Backend API
 cd backend && npm run start:dev
 
 # OCR Service
-cd ocr-service && uvicorn app.main:app --reload --port 8000
+cd ocr-service && uvicorn main:app --reload --port 8000
 
 # Mobile App
 cd mobile && npx expo start
@@ -255,42 +264,31 @@ cd mobile && npx expo start
 cd admin && npm run dev
 ```
 
+### Seed Credentials
+
+After running the seed, the following accounts are available locally:
+
+| Role | Phone | Password |
+|---|---|---|
+| Admin | +910000000001 | Admin@1234 |
+| Pharmacist | +910000000002 | Pharm@1234 |
+| Patient | +919876543210 | — (OTP flow) |
+
 ### Environment Variables
 
-Create a `.env` file in the `backend/` directory:
+See `backend/.env.example` for the full list. Key variables:
 
 ```env
-# Application
-NODE_ENV=development
-PORT=3000
-
-# Database
 DATABASE_URL=postgresql://user:password@localhost:5432/vaidyamarg
 REDIS_URL=redis://localhost:6379
-
-# Authentication
 JWT_SECRET=your_jwt_secret_here
-JWT_EXPIRES_IN=7d
-
-# Cloudinary
+MSG91_AUTH_KEY=your_msg91_auth_key
+MSG91_TEMPLATE_ID=your_msg91_template_id
+RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxx
+RAZORPAY_KEY_SECRET=your_razorpay_key_secret
 CLOUDINARY_CLOUD_NAME=your_cloud_name
-CLOUDINARY_API_KEY=your_api_key
-CLOUDINARY_API_SECRET=your_api_secret
-
-# Razorpay
-RAZORPAY_KEY_ID=your_key_id
-RAZORPAY_KEY_SECRET=your_key_secret
-
-# MSG91 (OTP)
-MSG91_AUTH_KEY=your_auth_key
-MSG91_TEMPLATE_ID=your_template_id
-
-# Firebase
-FIREBASE_SERVER_KEY=your_firebase_server_key
-
-# OCR Microservice
-OCR_SERVICE_URL=http://ocr-service:8000
-INTERNAL_SECRET=your_internal_secret
+FIREBASE_SERVICE_ACCOUNT_JSON={...}
+INTERNAL_SECRET=shared_secret_between_nestjs_and_ocr
 ```
 
 ---
@@ -302,14 +300,14 @@ VAIDYAMARG/
 |
 +-- backend/                        # Node.js + NestJS REST API
 |   +-- src/
-|   |   +-- auth/                   # JWT authentication, OTP
-|   |   +-- users/                  # User management
+|   |   +-- auth/                   # JWT authentication, OTP (MSG91)
+|   |   +-- users/                  # User management + admin list
 |   |   +-- medicines/              # Medicine catalogue and search
-|   |   +-- orders/                 # Order lifecycle management
-|   |   +-- prescriptions/          # Upload, storage, verification
-|   |   +-- pharmacies/             # Partner pharmacy management
-|   |   +-- notifications/          # FCM and SMS notifications
-|   +-- prisma/                     # Database schema and migrations
+|   |   +-- orders/                 # Order lifecycle + Socket.io gateway
+|   |   +-- prescriptions/          # Upload, storage, verification, OCR callback
+|   |   +-- pharmacies/             # Admin dashboard stats + charts
+|   |   +-- notifications/          # FCM push + MSG91 SMS
+|   +-- prisma/                     # Database schema, migrations, seed
 |
 +-- mobile/                         # React Native + Expo App
 |   +-- src/
@@ -327,18 +325,19 @@ VAIDYAMARG/
 |   |   +-- api/                    # Axios client with interceptors
 |
 +-- ocr-service/                    # Python FastAPI OCR Microservice
-|   +-- app/
-|   |   +-- main.py                 # FastAPI application entry point
-|   |   +-- ocr/
-|   |   |   +-- engine.py           # Google Vision + Tesseract + preprocessor
-|   |   |   +-- extractor.py        # Medicine name, dosage, frequency parser
-|   |   |   +-- tests/              # Pytest test suite
-|   |   +-- callbacks.py            # Retry-safe callback to NestJS
-|   |   +-- schemas.py              # Pydantic request/response models
-|   |   +-- config.py               # Pydantic settings
+|   +-- main.py                     # FastAPI entry point (sync + async endpoints)
+|   +-- config.py                   # Pydantic settings
+|   +-- schemas.py                  # Pydantic request/response models
+|   +-- callbacks.py                # Retry-safe callback to NestJS (Tenacity)
+|   +-- ocr/
+|   |   +-- engine.py               # Google Vision + Tesseract orchestration
+|   |   +-- preprocessor.py         # Image contrast/sharpen/upscale pipeline
+|   |   +-- extractor.py            # Medicine name/dosage/frequency parser
+|   |   +-- tests/                  # Pytest test suite
 |   +-- Dockerfile
 |   +-- requirements.txt
 |
++-- .github/workflows/ci.yml        # GitHub Actions CI (backend + OCR + admin)
 +-- docker-compose.yml              # Full stack orchestration
 +-- .env.example                    # Root environment variable template
 +-- README.md
@@ -357,7 +356,7 @@ Interactive Swagger documentation is available at `/api/docs` when running local
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/auth/send-otp` | Send OTP to a phone number |
+| POST | `/auth/send-otp` | Send OTP to a phone number via MSG91 |
 | POST | `/auth/verify-otp` | Verify OTP and receive JWT |
 | POST | `/auth/refresh` | Refresh access token |
 
@@ -377,7 +376,8 @@ Interactive Swagger documentation is available at `/api/docs` when running local
 | GET | `/prescriptions/my` | Authenticated user's prescription history |
 | GET | `/prescriptions/{id}` | Get single prescription with signed image URL |
 | PATCH | `/prescriptions/{id}/verify` | Pharmacist: approve or reject prescription |
-| POST | `/prescriptions/{id}/ocr` | Trigger OCR processing |
+| POST | `/prescriptions/{id}/ocr` | Trigger async OCR processing |
+| POST | `/prescriptions/{id}/ocr-result` | OCR service callback (internal) |
 | GET | `/prescriptions/admin/pending` | Pharmacist: unverified prescription queue |
 
 ### Orders
@@ -390,13 +390,36 @@ Interactive Swagger documentation is available at `/api/docs` when running local
 | PATCH | `/orders/{id}/cancel` | Cancel an order |
 | PATCH | `/orders/{id}/status` | Admin: advance order status |
 
+### Admin
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/admin/dashboard/stats` | KPIs — orders, users, revenue, pending Rx |
+| GET | `/admin/dashboard/revenue` | Revenue chart data (last 30 days) |
+| GET | `/admin/dashboard/orders` | Orders-per-day chart (last 30 days) |
+| GET | `/admin/orders` | Paginated order list with search and status filter |
+| GET | `/admin/orders/{id}` | Single order detail |
+| PATCH | `/admin/orders/{id}` | Update order status (triggers Socket.io + FCM) |
+| GET | `/admin/users` | Paginated user list with search |
+| GET | `/admin/users/{id}` | Single user detail |
+
 ### OCR Service
 
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/health` | Service health check |
-| POST | `/ocr/extract` | Synchronous: upload image, receive extracted medicines |
-| POST | `/ocr/process-async` | Asynchronous: process image URL, callback to backend |
+| POST | `/ocr/extract` | Sync: base64 image → extracted medicines |
+| POST | `/ocr/extract-file` | Sync: multipart file upload → extracted medicines |
+| POST | `/ocr/process-async` | Async: Cloudinary URL → background OCR → NestJS callback |
+
+### WebSocket (Socket.io)
+
+**Namespace:** `/orders`
+
+| Event | Direction | Payload | Description |
+|---|---|---|---|
+| `join_user_room` | Client → Server | `{ userId }` | Join personal room for order updates |
+| `order_updated` | Server → Client | `{ orderId, status }` | Fired when admin updates an order status |
 
 ---
 
@@ -404,7 +427,7 @@ Interactive Swagger documentation is available at `/api/docs` when running local
 
 ### Phase 1 — MVP (Month 1–2)
 - [x] Project architecture and monorepo setup
-- [x] User authentication (Phone OTP + JWT)
+- [x] User authentication (Phone OTP via MSG91 + JWT)
 - [x] Medicine catalogue and search
 - [x] Generic vs. brand price comparison
 - [x] Order lifecycle management
@@ -412,10 +435,14 @@ Interactive Swagger documentation is available at `/api/docs` when running local
 
 ### Phase 2 — Core Features (Month 3–4)
 - [x] Prescription upload and Cloudinary storage
-- [x] AI/OCR prescription reader (Google Vision + Tesseract)
-- [x] Real-time order tracking (Socket.io)
-- [x] Push notifications (FCM)
-- [ ] Refill reminders for chronic patients
+- [x] AI/OCR prescription reader (Google Vision + Tesseract fallback)
+- [x] Real-time order tracking (Socket.io — `/orders` namespace)
+- [x] Push notifications (Firebase Cloud Messaging)
+- [x] Admin dashboard with KPI stats + revenue/orders charts
+- [x] Admin orders and users management endpoints
+- [x] GitHub Actions CI/CD pipeline
+- [x] Database seed (20 medicines + demo users)
+- [ ] Refill reminders for chronic patients (Bull queue)
 
 ### Phase 3 — Partner Ecosystem (Month 5–6)
 - [x] Admin and pharmacist dashboard
@@ -441,56 +468,43 @@ Interactive Swagger documentation is available at `/api/docs` when running local
 | Delivery Fee | Rs. 20–49 per order; free above Rs. 500 | Direct revenue |
 | Pharmacy Commission | 8–12% commission per order fulfilled by a partner pharmacy | Scalable |
 | Lab Test Referral | Referral fee from diagnostic lab partnerships | 10–15% |
-| Subscription Plan | Monthly medicine box for chronic condition patients | Recurring MRR |
+| Subscription Plan | Chronic patient plan — automatic refills + priority delivery | Recurring |
 
 ---
 
 ## Security and Compliance
 
-- All data encrypted with **AES-256** at rest
-- **HTTPS/TLS** enforced on all endpoints
-- Compliant with **IT Act 2000** and **DPDP Act 2023** (India)
-- All medicines sourced from **WHO-GMP certified** manufacturers
-- Every prescription reviewed by a **licensed pharmacist** before fulfillment
-- Drug License, FSSAI, and pharmacy regulations strictly followed
-- Prescription images stored as **private/authenticated** assets on Cloudinary — no public URL access
-- Signed image URLs generated with **1-hour expiry** for pharmacist review
+- All prescription images stored as **private** Cloudinary assets (signed URLs, 1-hour expiry)
+- JWT access tokens expire in **7 days**; refresh tokens in **30 days**
+- OTP codes expire in **10 minutes** and are single-use
+- Internal OCR callbacks authenticated via `x-internal-secret` header
+- Razorpay webhook signatures verified with HMAC-SHA256
+- Passwords hashed with **bcrypt** (salt rounds: 10)
+- HTTPS enforced in production via Nginx
+- All sensitive env vars excluded from version control via `.gitignore`
 
 ---
 
 ## Contributing
 
-Contributions, issues, and feature requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Pull requests are welcome. For major changes, please open an issue first.
 
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature-name`
+2. Create your feature branch: `git checkout -b feat/your-feature`
 3. Commit your changes: `git commit -m 'feat: add your feature'`
-4. Push to the branch: `git push origin feature/your-feature-name`
-5. Open a Pull Request
+4. Push to the branch: `git push origin feat/your-feature`
+5. Open a pull request
 
 ---
 
 ## License
 
-Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
+Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
 
 ---
 
 ## Contact
 
-**Chandra Sekhar Chakraborty** — Founder and Developer
+**ChandraVerse** — [github.com/ChandraVerse](https://github.com/ChandraVerse)
 
-[![GitHub](https://img.shields.io/badge/GitHub-ChandraVerse-181717?style=flat-square&logo=github)](https://github.com/ChandraVerse)
-[![Portfolio](https://img.shields.io/badge/Portfolio-chandraverse.github.io-01696f?style=flat-square&logo=googlechrome)](https://chandraverse.github.io/chandraverse-portfolio/)
-[![Twitter](https://img.shields.io/badge/Twitter-@CS__Chakraborty-1DA1F2?style=flat-square&logo=twitter)](https://twitter.com/CS_Chakraborty)
-[![Email](https://img.shields.io/badge/Email-chakrabortychandrasekhar185@gmail.com-D14836?style=flat-square&logo=gmail)](mailto:chakrabortychandrasekhar185@gmail.com)
-
----
-
-<div align="center">
-
-**VaidyaMarg — वैद्यमार्ग**
-
-*Making quality medicine accessible to every Indian*
-
-</div>
+Project Link: [https://github.com/ChandraVerse/VAIDYAMARG](https://github.com/ChandraVerse/VAIDYAMARG)
