@@ -1,0 +1,23 @@
+// Add this model to backend/prisma/schema.prisma
+// It cannot be applied here directly — paste this block into schema.prisma
+// alongside the existing models.
+
+// ─────────────────────────────────────────────
+// Paste into schema.prisma:
+// ─────────────────────────────────────────────
+
+model RefillReminder {
+  id           String   @id @default(cuid())
+  userId       String
+  medicineId   String
+  intervalDays Int      @default(30)
+  enabled      Boolean  @default(true)
+  nextRemindAt DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user     User     @relation(fields: [userId],     references: [id], onDelete: Cascade)
+  medicine Medicine @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, medicineId])
+}
