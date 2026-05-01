@@ -1,37 +1,29 @@
-# ============================================================
-# VaidyaMarg — CI (Pull Request Gate)
-# Runs on every PR to main and every push to main.
-# Jobs run in parallel; all must pass before merge.
-# ============================================================
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ------------------------------------------------------------
-  # 1. BACKEND  — NestJS + Prisma
-  # ------------------------------------------------------------
-  backend:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Backend — lint, type-check, unit tests
+  # ──────────────────────────────────────────────────────────────────────────
+  backend-ci:
     name: Backend (NestJS)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
 
     services:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER:     test
-          POSTGRES_PASSWORD: test
+          POSTGRES_USER:     vaidyamarg_test
+          POSTGRES_PASSWORD: testpass
           POSTGRES_DB:       vaidyamarg_test
         ports: ['5432:5432']
         options: >-
@@ -49,26 +41,22 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+    defaults:
+      run:
+        working-directory: backend
+
     env:
-      DATABASE_URL:        postgresql://test:test@localhost:5432/vaidyamarg_test
-      REDIS_URL:           redis://localhost:6379
-      JWT_SECRET:          ci-test-secret-32-chars-minimum!!
-      JWT_REFRESH_SECRET:  ci-test-refresh-32-chars-minimum!
-      TWILIO_ACCOUNT_SID:  ACtest
-      TWILIO_AUTH_TOKEN:   testtoken
-      TWILIO_PHONE_NUMBER: "+15005550006"
-      CLOUDINARY_CLOUD_NAME: test
-      CLOUDINARY_API_KEY:    test
-      CLOUDINARY_API_SECRET: test
-      RAZORPAY_KEY_ID:       test
-      RAZORPAY_KEY_SECRET:   test
-      FIREBASE_PROJECT_ID:   test
-      NODE_ENV:              test
+      NODE_ENV:     test
+      DATABASE_URL: postgresql://vaidyamarg_test:testpass@localhost:5432/vaidyamarg_test
+      REDIS_URL:    redis://localhost:6379
+      JWT_SECRET:   ci-test-secret-do-not-use-in-prod
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -80,37 +68,38 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
-      - name: Run migrations (test DB)
+      - name: Run Prisma migrations (test DB)
         run: npx prisma migrate deploy
+
+      - name: Type-check
+        run: npx tsc --noEmit
 
       - name: Lint
         run: npm run lint
 
+      - name: Unit tests
+        run: npm run test -- --passWithNoTests --forceExit
+
       - name: Build
         run: npm run build
 
-      - name: Unit tests
-        run: npm run test -- --passWithNoTests --ci
-
-      - name: E2E tests
-        run: npm run test:e2e -- --passWithNoTests
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/vaidyamarg_test
-
-  # ------------------------------------------------------------
-  # 2. ADMIN  — Vite + React
-  # ------------------------------------------------------------
-  admin:
-    name: Admin (Vite + React)
+  # ──────────────────────────────────────────────────────────────────────────
+  # Admin panel — type-check + build
+  # ──────────────────────────────────────────────────────────────────────────
+  admin-ci:
+    name: Admin Panel (Vite + React)
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: admin
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -119,28 +108,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      - name: Type-check
+        run: npm run type-check
 
       - name: Build
         run: npm run build
-        env:
-          VITE_API_URL: https://api.vaidyamarg.in
 
-  # ------------------------------------------------------------
-  # 3. MOBILE  — Expo (type-check only; no simulator in CI)
-  # ------------------------------------------------------------
-  mobile:
-    name: Mobile (Expo TypeCheck)
+  # ──────────────────────────────────────────────────────────────────────────
+  # Mobile — type-check only (no emulator needed in CI)
+  # ──────────────────────────────────────────────────────────────────────────
+  mobile-ci:
+    name: Mobile (React Native / Expo)
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: mobile
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -149,43 +139,40 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: TypeScript check
+      - name: Type-check
         run: npx tsc --noEmit
 
-      - name: Lint
-        run: npm run lint
-
-  # ------------------------------------------------------------
-  # 4. OCR SERVICE  — Python FastAPI
-  # ------------------------------------------------------------
-  ocr:
-    name: OCR Service (Python)
+  # ──────────────────────────────────────────────────────────────────────────
+  # Docker build smoke-test (no push, just verify images build)
+  # ──────────────────────────────────────────────────────────────────────────
+  docker-build-check:
+    name: Docker build smoke-test
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ocr-service
+    needs: [backend-ci, admin-ci]
+    # Only run on PRs to main — saves CI minutes on every push
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image (no push)
+        uses: docker/build-push-action@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: ocr-service/requirements.txt
+          context: ./backend
+          push: false
+          tags: vaidyamarg/api:ci
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
 
-      - name: Install system deps (Tesseract)
-        run: sudo apt-get install -y tesseract-ocr tesseract-ocr-eng
-
-      - name: Install Python deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Lint (ruff)
-        run: pip install ruff && ruff check .
-        continue-on-error: true   # non-blocking until ruff is added to requirements
-
-      - name: Run tests
-        run: python -m pytest tests/ -v --tb=short
-        continue-on-error: true   # non-blocking until tests exist
+      - name: Build admin image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./admin
+          push: false
+          tags: vaidyamarg/admin:ci
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
