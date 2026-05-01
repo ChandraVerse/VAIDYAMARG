@@ -25,7 +25,7 @@ model User {
   role       Role     @default(PATIENT)
   isVerified Boolean  @default(false)
   isActive   Boolean  @default(true)
-  fcmToken   String?  // Firebase Cloud Messaging device token
+  fcmToken   String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -33,6 +33,7 @@ model User {
   prescriptions   Prescription[]
   notifications   Notification[]
   refillReminders RefillReminder[]
+  pharmacy        Pharmacy?          // if role = PHARMACIST, their pharmacy
 
   @@map("users")
 }
@@ -41,6 +42,75 @@ enum Role {
   PATIENT
   PHARMACIST
   ADMIN
+}
+
+// ============================================================
+// PHARMACY PARTNER
+// ============================================================
+model Pharmacy {
+  id               String          @id @default(cuid())
+  ownerId          String          @unique
+  owner            User            @relation(fields: [ownerId], references: [id])
+
+  // Business details
+  name             String
+  licenseNumber    String          @unique  // Drug license
+  gstNumber        String?
+  email            String?         @unique
+  phone            String
+  address          String
+  city             String
+  state            String
+  pincode          String
+
+  // Verification
+  status           PharmacyStatus  @default(PENDING)
+  rejectionReason  String?
+  approvedById     String?         // Admin who approved
+  approvedAt       DateTime?
+
+  // Documents (Cloudinary URLs)
+  drugLicenseUrl   String?
+  gstCertUrl       String?
+  ownerIdUrl       String?         // Aadhaar / PAN
+
+  // Operations
+  isActive         Boolean         @default(false)
+  operatingHours   String?         // e.g. "09:00-21:00"
+  deliveryRadius   Int?            // km
+  commissionRate   Float           @default(10)  // % commission VaidyaMarg takes
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  earnings         PharmacyEarning[]
+
+  @@map("pharmacies")
+}
+
+enum PharmacyStatus {
+  PENDING    // Onboarding submitted, awaiting admin review
+  APPROVED   // Live partner
+  REJECTED   // Rejected with reason
+  SUSPENDED  // Temporarily suspended
+}
+
+// ============================================================
+// PHARMACY EARNINGS
+// ============================================================
+model PharmacyEarning {
+  id           String   @id @default(cuid())
+  pharmacyId   String
+  pharmacy     Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  orderId      String   @unique  // one earning row per order
+  orderAmount  Float
+  commission   Float    // VaidyaMarg cut (commissionRate % of orderAmount)
+  netEarning   Float    // orderAmount - commission
+  settledAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([pharmacyId, createdAt])
+  @@map("pharmacy_earnings")
 }
 
 // ============================================================
@@ -130,20 +200,20 @@ model Prescription {
   id               String             @id @default(cuid())
   userId           String
   user             User               @relation(fields: [userId], references: [id])
-  imageUrl         String             // Cloudinary URL
-  publicId         String?            // Cloudinary public_id for deletion
+  imageUrl         String
+  publicId         String?
   status           PrescriptionStatus @default(PENDING)
-  fileType         String?            // MIME type
-  fileName         String?            // original filename
-  fileSize         Int?               // bytes
-  ocrData          Json?              // Raw OCR output
-  ocrResult        String?            // Serialised OCR result (medicines list)
-  ocrProcessedAt   DateTime?          // When OCR completed
-  medicines        Json?              // Extracted medicine list
+  fileType         String?
+  fileName         String?
+  fileSize         Int?
+  ocrData          Json?
+  ocrResult        String?
+  ocrProcessedAt   DateTime?
+  medicines        Json?
   doctorName       String?
   patientName      String?
   issuedDate       DateTime?
-  verifiedById     String?            // Pharmacist user ID
+  verifiedById     String?
   verifiedAt       DateTime?
   rejectionReason  String?
   pharmacistNotes  String?
@@ -195,6 +265,9 @@ enum NotificationType {
   LOW_STOCK_ALERT
   PAYMENT_SUCCESS
   REFILL_REMINDER
+  PARTNER_APPROVED
+  PARTNER_REJECTED
+  PARTNER_SUSPENDED
 }
 
 // ============================================================
