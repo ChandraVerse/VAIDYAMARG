@@ -4,10 +4,13 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService }       from '../../prisma/prisma.service';
 import { NotificationsService, NotificationType } from '../notifications/notifications.service';
 import { RemindersScheduler }  from '../notifications/reminders.scheduler';
+import { OrderGateway }        from './order.gateway';
 
 enum OrderStatus {
   PENDING    = 'PENDING',
@@ -34,6 +37,10 @@ export class OrdersService {
     private readonly prisma:             PrismaService,
     private readonly notifications:      NotificationsService,
     private readonly remindersScheduler: RemindersScheduler,
+    // forwardRef: OrderGateway <-> OrdersService live in the same module;
+    // forwardRef avoids the circular dependency NestJS would otherwise throw.
+    @Inject(forwardRef(() => OrderGateway))
+    private readonly gateway: OrderGateway,
   ) {}
 
   // ─── Place Order ─────────────────────────────────────────────────────────────
@@ -185,7 +192,13 @@ export class OrdersService {
       },
     });
 
-    // Push notification for status change
+    // ── Real-time Socket.io push ──────────────────────────────────────────
+    // Fires BEFORE the FCM push so the mobile app can update the UI
+    // immediately if the patient has the app open, then handle the
+    // background FCM notification if they don't.
+    this.gateway.emitOrderUpdate(order.id, order.userId, newStatus);
+
+    // ── FCM / SMS push notification ───────────────────────────────────────
     const notifType = STATUS_TO_NOTIF[newStatus];
     if (notifType) {
       await this.notifications.send(order.userId, notifType, {
@@ -230,6 +243,9 @@ export class OrdersService {
         }),
       ),
     );
+
+    // ── Real-time cancel confirmation ─────────────────────────────────────
+    this.gateway.emitOrderUpdate(order.id, order.userId, OrderStatus.CANCELLED);
 
     await this.notifications.send(userId, NotificationType.ORDER_CANCELLED, {
       orderId: order.id,
