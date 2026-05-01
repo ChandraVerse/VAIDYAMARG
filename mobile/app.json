@@ -10,37 +10,47 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#01696f"
+      "backgroundColor": "#f7f6f2"
     },
-    "assetBundlePatterns": ["**/*"],
     "ios": {
-      "supportsTablet": false,
-      "bundleIdentifier": "in.vaidyamarg.app",
+      "supportsTablet": true,
+      "bundleIdentifier": "com.chandraverse.vaidyamarg",
       "infoPlist": {
-        "NSCameraUsageDescription": "VaidyaMarg needs camera access to scan prescriptions.",
-        "NSPhotoLibraryUsageDescription": "VaidyaMarg needs photo access to upload prescriptions."
+        "NSCameraUsageDescription": "VaidyaMarg needs camera access to capture your prescription.",
+        "NSPhotoLibraryUsageDescription": "VaidyaMarg needs photo library access to upload your prescription."
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#01696f"
+        "backgroundColor": "#f7f6f2"
       },
-      "package": "in.vaidyamarg.app",
+      "package": "com.chandraverse.vaidyamarg",
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE"
+        "WRITE_EXTERNAL_STORAGE"
       ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
-      "expo-font",
-      ["expo-notifications", { "icon": "./assets/notification-icon.png", "color": "#01696f" }],
-      ["expo-camera", { "cameraPermission": "Allow VaidyaMarg to scan your prescription." }]
+      "expo-secure-store",
+      [
+        "expo-camera",
+        { "cameraPermission": "VaidyaMarg needs camera access to capture your prescription." }
+      ],
+      [
+        "expo-image-picker",
+        { "photosPermission": "VaidyaMarg needs photo library access to upload your prescription." }
+      ]
     ],
-    "experiments": { "typedRoutes": true }
+    "experiments": {
+      "typedRoutes": true
+    }
   }
 }
