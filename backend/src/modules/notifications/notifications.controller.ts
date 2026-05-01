@@ -1,59 +1,18 @@
-import {
-  Controller, Get, Post, Patch,
-  Param, Body, UseGuards,
-  ParseUUIDPipe, HttpCode, HttpStatus,
-} from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { NotificationsService } from './notifications.service';
+import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { FcmService } from './fcm.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RegisterFcmTokenDto } from './dto/register-fcm-token.dto';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
-@ApiTags('Notifications')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
-@Controller('api/v1/notifications')
+@Controller('admin/notifications')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN', 'PHARMACIST')
 export class NotificationsController {
-  constructor(private readonly notificationsService: NotificationsService) {}
+  constructor(private readonly fcm: FcmService) {}
 
-  // ─── Get my notifications ──────────────────────────────────────────────────
-  @Get()
-  @ApiOperation({ summary: 'Get all my notifications' })
-  async getMyNotifications(@CurrentUser() user: { id: string }) {
-    return this.notificationsService.getNotifications(user.id);
-  }
-
-  @Get('unread-count')
-  @ApiOperation({ summary: 'Get unread notification count' })
-  async getUnreadCount(@CurrentUser() user: { id: string }) {
-    return this.notificationsService.getUnreadCount(user.id);
-  }
-
-  // ─── Mark as read ─────────────────────────────────────────────────────────
-  @Patch(':id/read')
-  @ApiOperation({ summary: 'Mark a notification as read' })
-  async markAsRead(
-    @CurrentUser() user: { id: string },
-    @Param('id', ParseUUIDPipe) notifId: string,
-  ) {
-    return this.notificationsService.markAsRead(user.id, notifId);
-  }
-
-  @Patch('read-all')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Mark all notifications as read' })
-  async markAllRead(@CurrentUser() user: { id: string }) {
-    return this.notificationsService.markAllRead(user.id);
-  }
-
-  // ─── FCM Token (for push notifications) ────────────────────────────────────
-  @Post('fcm-token')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Register device FCM token for push notifications' })
-  async registerFcmToken(
-    @CurrentUser() user: { id: string },
-    @Body() dto: RegisterFcmTokenDto,
-  ) {
-    return this.notificationsService.registerFcmToken(user.id, dto.token);
+  @Post('send')
+  async send(@Body() body: { token: string; title: string; body: string; data?: Record<string, string> }) {
+    await this.fcm.sendToToken(body);
+    return { success: true };
   }
 }
