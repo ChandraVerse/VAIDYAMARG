@@ -16,6 +16,10 @@ import { PartnerNavigator } from './PartnerNavigator';
 // Partner order detail (pushed onto stack from PartnerNavigator)
 import { PartnerOrderDetailScreen } from '@/screens/partner/PartnerOrderDetailScreen';
 
+// Prescription screens
+import PrescriptionListScreen   from '@/screens/prescriptions/PrescriptionListScreen';
+import PrescriptionDetailScreen from '@/screens/prescriptions/PrescriptionDetailScreen';
+
 // Reminder screens
 import ReminderCreateScreen from '@/screens/reminders/ReminderCreateScreen';
 
@@ -23,12 +27,17 @@ import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+const HEADER_BASE = {
+  headerTintColor:     '#01696f',
+  headerStyle:         { backgroundColor: '#f7f6f2' },
+  headerShadowVisible: false,
+  headerBackTitle:     'Back',
+} as const;
+
 export function RootNavigator() {
   const user  = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token);
 
-  // Register FCM push token as soon as the user is authenticated.
-  // useNotifications is a no-op when there is no token.
   useNotifications();
 
   const isAuth    = !!token;
@@ -52,17 +61,24 @@ export function RootNavigator() {
         // ── Customer app ──────────────────────────────────────────────────
         <>
           <Stack.Screen name="Main" component={MainTabs} />
+
+          {/* Prescription flow */}
+          <Stack.Screen
+            name="PrescriptionList"
+            component={PrescriptionListScreen}
+            options={{ ...HEADER_BASE, headerShown: true, title: 'My Prescriptions', headerBackTitle: 'Profile' }}
+          />
+          <Stack.Screen
+            name="PrescriptionDetail"
+            component={PrescriptionDetailScreen}
+            options={{ ...HEADER_BASE, headerShown: true, title: 'Prescription', headerBackTitle: 'Prescriptions' }}
+          />
+
+          {/* Reminder flow */}
           <Stack.Screen
             name="ReminderCreate"
             component={ReminderCreateScreen}
-            options={{
-              headerShown: true,
-              title: 'New Reminder',
-              headerBackTitle: 'Reminders',
-              headerTintColor: '#01696f',
-              headerStyle: { backgroundColor: '#f7f6f2' },
-              headerShadowVisible: false,
-            }}
+            options={{ ...HEADER_BASE, headerShown: true, title: 'New Reminder', headerBackTitle: 'Reminders' }}
           />
         </>
       )}

@@ -8,12 +8,14 @@ export type RootStackParamList = {
   // Main (hosts tabs)
   Main: undefined;
   // Detail screens (above tabs)
-  MedicineDetail:      { medicineId: string };
-  Checkout:            undefined;
-  OrderTracking:       { orderId: string };
-  PrescriptionUpload:  undefined;
-  ReminderList:        undefined;
-  ReminderCreate:      undefined;   // ← new
+  MedicineDetail:       { medicineId: string };
+  Checkout:             undefined;
+  OrderTracking:        { orderId: string };
+  PrescriptionUpload:   undefined;
+  PrescriptionList:     undefined;               // ← new
+  PrescriptionDetail:   { prescriptionId: string }; // ← new
+  ReminderList:         undefined;
+  ReminderCreate:       undefined;
 };
 
 export type MainTabParamList = {
