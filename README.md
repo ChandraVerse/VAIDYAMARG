@@ -8,6 +8,7 @@
 **Affordable Medicine for Every Indian — Powered by AI**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-01696f.svg?style=flat-square)](LICENSE)
+[![CI](https://github.com/ChandraVerse/VAIDYAMARG/actions/workflows/ci.yml/badge.svg)](https://github.com/ChandraVerse/VAIDYAMARG/actions/workflows/ci.yml)
 [![Status](https://img.shields.io/badge/Status-In%20Development-orange?style=flat-square)]()
 [![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%20%7C%20Web-blue?style=flat-square)]()
 [![Stack](https://img.shields.io/badge/Stack-React%20Native%20%7C%20NestJS%20%7C%20Python-informational?style=flat-square)]()
@@ -16,7 +17,7 @@
 
 ---
 
-> *"Branded medicine at Rs. 450? The same generic costs Rs. 65. VaidyaMarg bridges that gap."
+> *“Branded medicine at Rs. 450? The same generic costs Rs. 65. VaidyaMarg bridges that gap.”*
 
 [Download App](#) · [Web Portal](#) · [Documentation](#) · [Report Bug](../../issues) · [Request Feature](../../issues)
 
@@ -64,7 +65,7 @@ In India, branded medicines cost **3–10x more** than their generic equivalents
 - Most patients are unaware that generic alternatives exist
 - Prescription management is entirely paper-based and disorganised
 - Rural and Tier 2/3 cities have limited access to quality pharmacies
-- No single platform provides a transparent branded vs. generic price comparison
+- No single platform provides a transparent branded vs. generic price comparison
 
 ---
 
@@ -86,7 +87,7 @@ VaidyaMarg addresses the problem in three steps:
 
 - **Prescription Upload** — Photograph a prescription; the AI reads it automatically
 - **Smart Medicine Search** — Search by brand name, view generic alternatives side by side
-- **Price Comparison** — Real-time branded vs. generic price difference
+- **Price Comparison** — Real-time branded vs. generic price difference
 - **Easy Ordering** — Add to cart and checkout in under 60 seconds
 - **Real-time Order Tracking** — Live delivery status updates via Socket.io
 - **Refill Reminders** — Monthly reminders for chronic patients (diabetes, hypertension, thyroid)
@@ -134,7 +135,7 @@ VaidyaMarg addresses the problem in three steps:
 | Node.js + NestJS | Core REST API — orders, users, medicines |
 | Prisma ORM | PostgreSQL schema management and queries |
 | Socket.io | Real-time order tracking |
-| JWT + OTP (MSG91) | Secure authentication — **MSG91 is the sole OTP/SMS provider** |
+| JWT + OTP (Twilio) | Secure authentication — Twilio is the sole OTP/SMS provider |
 | Bull + Redis | Background job queue for reminders and notifications |
 
 ### OCR Microservice
@@ -161,14 +162,14 @@ VaidyaMarg addresses the problem in three steps:
 |---|---|
 | Razorpay | Payments — UPI, Cards, COD (India-first) |
 | Firebase Cloud Messaging | Push notifications (Android + iOS) |
-| MSG91 | OTP verification and SMS alerts |
+| Twilio | OTP verification and SMS alerts |
 
 ### DevOps and Infrastructure
 
 | Technology | Purpose |
 |---|---|
 | Docker + Docker Compose | Containerisation of all 5 services |
-| GitHub Actions | CI/CD pipeline — lint, test, and build on every push |
+| GitHub Actions | CI/CD pipeline — lint, test, build, and deploy on every push |
 | AWS / Railway.app | Cloud hosting (Railway for MVP, AWS for scale) |
 | Nginx | Reverse proxy and load balancer |
 
@@ -178,27 +179,27 @@ VaidyaMarg addresses the problem in three steps:
 
 ```
 +-------------------------------------------------------------+
-|                       CLIENT LAYER                         |
-|   [React Native Mobile App]     [Vite + React Admin Panel]  |
+|                       CLIENT LAYER                          |
+|   [React Native Mobile App]    [Vite + React Admin Panel]   |
 +------------------------+------------------------------------+
                          | HTTPS / WSS
 +------------------------v------------------------------------+
-|                   API GATEWAY (Nginx)                      |
+|                   API GATEWAY (Nginx)                       |
 +--------+------------------+------------------+-------------+
          |                  |                  |
 +--------v--------+ +-------v-------+ +--------v-----------+
-|  Node.js NestJS | | Python FastAPI | |  Socket.io         |
-|  REST API       | | OCR Service   | |  Real-time Tracking|
+|  NestJS REST API| | FastAPI OCR   | | Socket.io /orders  |
+|  :3000          | | Service :8000 | | namespace          |
 +--------+--------+ +-------+-------+ +--------------------+
          |                  |
-+--------v------------------v-----------------------------+
-|                      DATA LAYER                        |
-|   PostgreSQL  |  Redis  |  Cloudinary                  |
-+--------+-----------------------------------------------+
++--------v------------------v---------------------------------+
+|                        DATA LAYER                           |
+|        PostgreSQL  |  Redis  |  Cloudinary                 |
++--------+----------------------------------------------------+
          |
 +--------v--------------------------------------------+
-|               EXTERNAL SERVICES                    |
-|   Razorpay  |  MSG91  |  FCM  |  Google Vision     |
+|               EXTERNAL SERVICES                     |
+|   Razorpay  |  Twilio  |  FCM  |  Google Vision     |
 +-----------------------------------------------------+
 ```
 
@@ -211,10 +212,11 @@ VaidyaMarg addresses the problem in three steps:
 ```bash
 node >= 20.x
 npm >= 10.x
-python >= 3.12
-docker and docker-compose
+python >= 3.11
+docker >= 24.x
+docker-compose >= 2.x
 git
-tesseract-ocr (auto-installed via Docker)
+tesseract-ocr  # auto-installed inside Docker
 ```
 
 ### Installation
@@ -229,23 +231,23 @@ cd VAIDYAMARG
 **2. Configure environment variables**
 
 ```bash
-cp backend/.env.example backend/.env
-cp ocr-service/.env.example ocr-service/.env
-# Edit each .env file with your credentials
+cp .env.example backend/.env
+# Edit backend/.env with your real credentials
+# See the Environment Variables section below for key vars
 ```
 
 **3. Start all services with Docker**
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
-**4. Seed the database (first run)**
+**4. Run migrations and seed the database (first run only)**
 
 ```bash
 # After containers are up:
-docker-compose exec api npx prisma migrate dev
-docker-compose exec api npx ts-node prisma/seed.ts
+docker compose exec backend npx prisma migrate deploy
+docker compose exec backend npx prisma db seed
 ```
 
 **5. Start services individually (development)**
@@ -266,29 +268,44 @@ cd admin && npm run dev
 
 ### Seed Credentials
 
-After running the seed, the following accounts are available locally:
+After running `npx prisma db seed`, these accounts are available locally (all passwords: `Password@123`):
 
-| Role | Phone | Password |
+| Role | Email | Notes |
 |---|---|---|
-| Admin | +910000000001 | Admin@1234 |
-| Pharmacist | +910000000002 | Pharm@1234 |
-| Patient | +919876543210 | — (OTP flow) |
+| Admin | admin@vaidyamarg.in | Full platform access |
+| Pharmacist | ramesh@apollo.pharmacy | Approved partner pharmacy |
+| Patient | priya.sharma@gmail.com | Verified · delivered order · 2 refill reminders |
+| Patient | arjun.mehta@outlook.com | Verified · order in processing |
+| Patient | sunita.patel@yahoo.com | Not verified · pending order |
 
 ### Environment Variables
 
-See `backend/.env.example` for the full list. Key variables:
+See `.env.example` for the full list. Key variables:
 
 ```env
+# Database
 DATABASE_URL=postgresql://user:password@localhost:5432/vaidyamarg
 REDIS_URL=redis://localhost:6379
-JWT_SECRET=your_jwt_secret_here
-MSG91_AUTH_KEY=your_msg91_auth_key
-MSG91_TEMPLATE_ID=your_msg91_template_id
+
+# Auth
+JWT_SECRET=your_32_char_minimum_secret
+
+# OTP / SMS (Twilio)
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=your_auth_token
+TWILIO_PHONE_NUMBER=+1XXXXXXXXXX
+
+# Payments
 RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxx
 RAZORPAY_KEY_SECRET=your_razorpay_key_secret
+
+# Storage
 CLOUDINARY_CLOUD_NAME=your_cloud_name
-FIREBASE_SERVICE_ACCOUNT_JSON={...}
-INTERNAL_SECRET=shared_secret_between_nestjs_and_ocr
+
+# Push notifications
+FIREBASE_PROJECT_ID=your_project_id
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk@your-project.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 ```
 
 ---
@@ -300,24 +317,28 @@ VAIDYAMARG/
 |
 +-- backend/                        # Node.js + NestJS REST API
 |   +-- src/
-|   |   +-- auth/                   # JWT authentication, OTP (MSG91)
-|   |   +-- users/                  # User management + admin list
-|   |   +-- medicines/              # Medicine catalogue and search
-|   |   +-- orders/                 # Order lifecycle + Socket.io gateway
-|   |   +-- prescriptions/          # Upload, storage, verification, OCR callback
-|   |   +-- pharmacies/             # Admin dashboard stats + charts
-|   |   +-- notifications/          # FCM push + MSG91 SMS
-|   +-- prisma/                     # Database schema, migrations, seed
+|   |   +-- modules/
+|   |   |   +-- auth/               # JWT authentication, OTP (Twilio)
+|   |   |   +-- users/              # User management + FCM token registration
+|   |   |   +-- medicines/          # Medicine catalogue and search
+|   |   |   +-- orders/             # Order lifecycle + Socket.io events
+|   |   |   +-- prescriptions/      # Upload, Cloudinary, OCR callback, verification
+|   |   |   +-- pharmacy/           # Admin dashboard stats + revenue/orders charts
+|   |   |   +-- partners/           # Pharmacy partner onboarding
+|   |   |   +-- notifications/      # FCM push + Twilio SMS + cron reminders
+|   |   |   +-- reminders/          # Refill reminder CRUD
+|   +-- prisma/                     # Schema, migrations, seed.ts
 |
 +-- mobile/                         # React Native + Expo App
 |   +-- src/
 |   |   +-- screens/                # Auth, Home, Search, Orders, Profile
 |   |   +-- components/             # Reusable UI components
 |   |   +-- store/                  # Zustand global state
-|   |   +-- services/               # API service layer
+|   |   +-- api/                    # Typed API service layer
+|   |   +-- hooks/                  # useNotifications (FCM token reg + handlers)
 |   +-- assets/                     # Fonts, images, icons
 |
-+-- admin/                          # Vite + React Pharmacist Dashboard
++-- admin/                          # Vite + React Admin Dashboard
 |   +-- src/
 |   |   +-- pages/                  # Dashboard, Orders, Prescriptions, Analytics
 |   |   +-- components/             # Layout, shared UI
@@ -333,13 +354,21 @@ VAIDYAMARG/
 |   |   +-- engine.py               # Google Vision + Tesseract orchestration
 |   |   +-- preprocessor.py         # Image contrast/sharpen/upscale pipeline
 |   |   +-- extractor.py            # Medicine name/dosage/frequency parser
-|   |   +-- tests/                  # Pytest test suite
+|   +-- tests/                      # Pytest test suite
 |   +-- Dockerfile
 |   +-- requirements.txt
 |
-+-- .github/workflows/ci.yml        # GitHub Actions CI (backend + OCR + admin)
-+-- docker-compose.yml              # Full stack orchestration
-+-- .env.example                    # Root environment variable template
++-- .github/
+|   +-- workflows/
+|   |   +-- ci.yml                  # PR gate — lint + build + test (parallel)
+|   |   +-- docker-publish.yml      # Build + push images to GHCR on main/tags
+|   |   +-- deploy.yml              # SSH deploy via docker compose (manual + tags)
+|   |   +-- codeql.yml              # Weekly CodeQL security scan
+|
++-- docker-compose.yml              # Full stack orchestration (prod)
++-- docker-compose.dev.yml          # Development overrides
++-- .env.example                    # Environment variable template
++-- Makefile                        # make dev | make seed | make logs | make down
 +-- README.md
 +-- LICENSE
 ```
@@ -350,14 +379,14 @@ VAIDYAMARG/
 
 Base URL: `https://api.vaidyamarg.in/v1`
 
-Interactive Swagger documentation is available at `/api/docs` when running locally.
+Interactive Swagger docs available at `http://localhost:3000/api/docs` when running locally.
 
 ### Authentication
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/auth/send-otp` | Send OTP to a phone number via MSG91 |
-| POST | `/auth/verify-otp` | Verify OTP and receive JWT |
+| POST | `/auth/send-otp` | Send OTP via Twilio SMS |
+| POST | `/auth/verify-otp` | Verify OTP and receive JWT pair |
 | POST | `/auth/refresh` | Refresh access token |
 
 ### Medicines
@@ -365,19 +394,19 @@ Interactive Swagger documentation is available at `/api/docs` when running local
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/medicines/search?q={name}` | Search medicines by name |
-| GET | `/medicines/{id}` | Get medicine details and generic alternatives |
-| GET | `/medicines/compare?brand={name}` | Compare brand vs. generic price |
+| GET | `/medicines/{id}` | Medicine details and generic alternatives |
+| GET | `/medicines/compare?brand={name}` | Compare brand vs. generic price |
 
 ### Prescriptions
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/prescriptions/upload` | Upload prescription image |
-| GET | `/prescriptions/my` | Authenticated user's prescription history |
-| GET | `/prescriptions/{id}` | Get single prescription with signed image URL |
-| PATCH | `/prescriptions/{id}/verify` | Pharmacist: approve or reject prescription |
+| POST | `/prescriptions/upload` | Upload prescription image (multipart) |
+| GET | `/prescriptions/my` | Authenticated user’s prescription history |
+| GET | `/prescriptions/{id}` | Single prescription with signed image URL |
+| PATCH | `/prescriptions/{id}/verify` | Pharmacist: approve or reject |
 | POST | `/prescriptions/{id}/ocr` | Trigger async OCR processing |
-| POST | `/prescriptions/{id}/ocr-result` | OCR service callback (internal) |
+| POST | `/prescriptions/{id}/ocr-result` | OCR service callback (internal, `x-internal-secret`) |
 | GET | `/prescriptions/admin/pending` | Pharmacist: unverified prescription queue |
 
 ### Orders
@@ -385,10 +414,10 @@ Interactive Swagger documentation is available at `/api/docs` when running local
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/orders` | Place a new order |
-| GET | `/orders/{id}` | Get order details |
-| GET | `/orders/my` | Authenticated user's order history |
+| GET | `/orders/{id}` | Order details |
+| GET | `/orders/my` | Authenticated user’s order history |
 | PATCH | `/orders/{id}/cancel` | Cancel an order |
-| PATCH | `/orders/{id}/status` | Admin: advance order status |
+| PATCH | `/orders/{id}/status` | Partner/Admin: advance order status |
 
 ### Admin
 
@@ -397,19 +426,35 @@ Interactive Swagger documentation is available at `/api/docs` when running local
 | GET | `/admin/dashboard/stats` | KPIs — orders, users, revenue, pending Rx |
 | GET | `/admin/dashboard/revenue` | Revenue chart data (last 30 days) |
 | GET | `/admin/dashboard/orders` | Orders-per-day chart (last 30 days) |
-| GET | `/admin/orders` | Paginated order list with search and status filter |
+| GET | `/admin/orders` | Paginated order list with search + status filter |
 | GET | `/admin/orders/{id}` | Single order detail |
-| PATCH | `/admin/orders/{id}` | Update order status (triggers Socket.io + FCM) |
+| PATCH | `/admin/orders/{id}` | Update status → triggers Socket.io + FCM push |
 | GET | `/admin/users` | Paginated user list with search |
 | GET | `/admin/users/{id}` | Single user detail |
+
+### Users
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/users/me` | Get authenticated user profile |
+| PATCH | `/users/me` | Update profile |
+| PATCH | `/users/me/fcm-token` | Register device push token |
+
+### Notifications
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/notifications` | User’s notification list (paginated) |
+| PATCH | `/notifications/{id}/read` | Mark notification as read |
+| PATCH | `/notifications/read-all` | Mark all as read |
 
 ### OCR Service
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/health` | Service health check |
+| GET | `/health` | Health check |
 | POST | `/ocr/extract` | Sync: base64 image → extracted medicines |
-| POST | `/ocr/extract-file` | Sync: multipart file upload → extracted medicines |
+| POST | `/ocr/extract-file` | Sync: multipart file → extracted medicines |
 | POST | `/ocr/process-async` | Async: Cloudinary URL → background OCR → NestJS callback |
 
 ### WebSocket (Socket.io)
@@ -419,36 +464,38 @@ Interactive Swagger documentation is available at `/api/docs` when running local
 | Event | Direction | Payload | Description |
 |---|---|---|---|
 | `join_user_room` | Client → Server | `{ userId }` | Join personal room for order updates |
-| `order_updated` | Server → Client | `{ orderId, status }` | Fired when admin updates an order status |
+| `order_updated` | Server → Client | `{ orderId, status, updatedAt }` | Fired when order status changes |
 
 ---
 
 ## Roadmap
 
-### Phase 1 — MVP (Month 1–2)
+### Phase 1 — MVP (Month 1–2) ✅
 - [x] Project architecture and monorepo setup
-- [x] User authentication (Phone OTP via MSG91 + JWT)
-- [x] Medicine catalogue and search
-- [x] Generic vs. brand price comparison
+- [x] User authentication (Phone OTP via Twilio + JWT)
+- [x] Medicine catalogue and search (20 real Indian medicines)
+- [x] Generic vs. brand price comparison
 - [x] Order lifecycle management
 - [x] Razorpay payment integration
 
-### Phase 2 — Core Features (Month 3–4)
+### Phase 2 — Core Features (Month 3–4) ✅
 - [x] Prescription upload and Cloudinary storage
-- [x] AI/OCR prescription reader (Google Vision + Tesseract fallback)
-- [x] Real-time order tracking (Socket.io — `/orders` namespace)
-- [x] Push notifications (Firebase Cloud Messaging)
-- [x] Admin dashboard with KPI stats + revenue/orders charts
+- [x] OCR prescription reader (Google Vision + Tesseract fallback + preprocessor)
+- [x] Push notifications (Firebase Cloud Messaging + Twilio SMS)
+- [x] Refill reminders for chronic patients (NestJS cron scheduler, daily 08:00 IST)
+- [x] Admin dashboard — KPI stats + revenue/orders charts
 - [x] Admin orders and users management endpoints
-- [x] GitHub Actions CI/CD pipeline
-- [x] Database seed (20 medicines + demo users)
-- [ ] Refill reminders for chronic patients (Bull queue)
+- [x] Swagger API documentation (`/api/docs`)
+- [x] GitHub Actions CI/CD (4 workflows: CI · Docker Publish · Deploy · CodeQL)
+- [x] Database seed (20 medicines + 5 demo users + sample orders)
+- [ ] Real-time order tracking (Socket.io — `/orders` namespace) — *in progress*
 
 ### Phase 3 — Partner Ecosystem (Month 5–6)
-- [x] Admin and pharmacist dashboard
-- [x] Pharmacist prescription verification workflow
-- [ ] Pharmacy partner onboarding portal
-- [ ] Partner analytics and earnings dashboard
+- [x] Admin prescription verification workflow
+- [x] Partner registration and onboarding DTO + endpoint
+- [ ] Pharmacy partner web portal (self-service onboarding UI)
+- [ ] Partner analytics and earnings dashboard (UI)
+- [ ] Inventory management UI for partners
 
 ### Phase 4 — Scale and Intelligence (Month 7+)
 - [ ] Handwritten prescription recognition
@@ -465,7 +512,7 @@ Interactive Swagger documentation is available at `/api/docs` when running local
 | Revenue Stream | Description | Estimated Margin |
 |---|---|---|
 | Generic Medicine Sales | Sourced from manufacturers, sold at 60–80% below brand price | 25–40% |
-| Delivery Fee | Rs. 20–49 per order; free above Rs. 500 | Direct revenue |
+| Delivery Fee | Rs. 20–49 per order; free above Rs. 500 | Direct revenue |
 | Pharmacy Commission | 8–12% commission per order fulfilled by a partner pharmacy | Scalable |
 | Lab Test Referral | Referral fee from diagnostic lab partnerships | 10–15% |
 | Subscription Plan | Chronic patient plan — automatic refills + priority delivery | Recurring |
@@ -475,13 +522,14 @@ Interactive Swagger documentation is available at `/api/docs` when running local
 ## Security and Compliance
 
 - All prescription images stored as **private** Cloudinary assets (signed URLs, 1-hour expiry)
-- JWT access tokens expire in **7 days**; refresh tokens in **30 days**
+- JWT access tokens expire in **15 minutes**; refresh tokens in **7 days**
 - OTP codes expire in **10 minutes** and are single-use
 - Internal OCR callbacks authenticated via `x-internal-secret` header
 - Razorpay webhook signatures verified with HMAC-SHA256
 - Passwords hashed with **bcrypt** (salt rounds: 10)
 - HTTPS enforced in production via Nginx
 - All sensitive env vars excluded from version control via `.gitignore`
+- Weekly automated CodeQL security scans (JS/TS + Python)
 
 ---
 
@@ -494,6 +542,8 @@ Pull requests are welcome. For major changes, please open an issue first.
 3. Commit your changes: `git commit -m 'feat: add your feature'`
 4. Push to the branch: `git push origin feat/your-feature`
 5. Open a pull request
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ---
 
