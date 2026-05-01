@@ -1,96 +1,76 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, Plus, Edit2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Pill, Plus, Pencil, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import api from '../api/axios';
+import { adminMedicinesApi } from '@/services/api';
+import { Badge, Button, Card, Empty, Input, Spinner, Table } from '@/components/ui';
 
-export default function Medicines() {
-  const queryClient = useQueryClient();
+export function MedicinesPage() {
+  const navigate = useNavigate();
+  const qc       = useQueryClient();
   const [search, setSearch] = useState('');
-  const [page,   setPage]   = useState(1);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-medicines', search, page],
-    queryFn:  () => api.get('/medicines/admin/list', {
-      params: { search, page, limit: 20 },
-    }).then((r) => r.data.data),
-    placeholderData: (prev) => prev,
+    queryKey: ['admin-medicines', search],
+    queryFn:  () => adminMedicinesApi.list({ search: search || undefined }),
   });
 
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, inStock }: any) => api.patch(`/medicines/${id}`, { inStock }),
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => adminMedicinesApi.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-medicines'] });
-      toast.success('Medicine updated!');
+      toast.success('Medicine deleted');
+      qc.invalidateQueries({ queryKey: ['admin-medicines'] });
     },
+    onError: () => toast.error('Failed to delete'),
   });
+
+  const medicines = data?.data?.data ?? [];
+
+  const columns = [
+    { key: 'name',     header: 'Name',         render: (r: Record<string, unknown>) => <span className="font-medium">{r.name as string}</span> },
+    { key: 'brand',    header: 'Brand',         render: (r: Record<string, unknown>) => <span className="text-text-muted">{r.brand as string}</span> },
+    { key: 'category', header: 'Category',      render: (r: Record<string, unknown>) => <span className="text-xs">{r.category as string}</span> },
+    { key: 'price',    header: 'Price',         render: (r: Record<string, unknown>) => <span className="tabular-nums">₹{Number(r.price).toFixed(2)}</span> },
+    { key: 'stock',    header: 'Stock',         render: (r: Record<string, unknown>) => <span className={Number(r.stock) < 10 ? 'text-error font-semibold' : ''}>{r.stock as number}</span> },
+    { key: 'rx',       header: 'Rx',            render: (r: Record<string, unknown>) => r.requiresPrescription ? <Badge label="Rx" variant="warning" /> : null },
+    {
+      key: 'actions', header: '',
+      render: (r: Record<string, unknown>) => (
+        <div className="flex gap-2">
+          <button onClick={(e) => { e.stopPropagation(); navigate(`/medicines/${r.id}/edit`); }} className="text-text-muted hover:text-primary transition-colors">
+            <Pencil size={14} />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); if (confirm('Delete this medicine?')) deleteMutation.mutate(r.id as string); }} className="text-text-muted hover:text-error transition-colors">
+            <Trash2 size={14} />
+          </button>
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <div className="max-w-5xl space-y-5">
+    <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-[#28251d]">Medicines</h1>
-        <button className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-[13px] font-semibold rounded-xl hover:bg-primary-hover transition-colors">
-          <Plus size={15} /> Add Medicine
-        </button>
+        <h1 className="text-lg font-bold text-text">Medicines</h1>
+        <Button icon={<Plus size={14} />} size="sm" onClick={() => navigate('/medicines/new')}>
+          Add medicine
+        </Button>
       </div>
 
-      <div className="relative max-w-sm">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#bab9b4]" />
-        <input
-          value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          placeholder="Search medicines…"
-          className="w-full pl-9 pr-4 py-2.5 bg-white border border-[#dcd9d5] rounded-xl text-sm outline-none focus:border-primary transition-colors"
-        />
-      </div>
+      <Input
+        placeholder="Search by name, brand or category"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="w-72"
+      />
 
-      <div className="bg-white rounded-2xl border border-[#dcd9d5] overflow-x-auto">
-        {isLoading ? (
-          <div className="py-16 text-center text-[#7a7974] text-sm">Loading…</div>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-[#dcd9d5] bg-[#f7f6f2]">
-                {['Name', 'Generic Name', 'Price', 'MRP', 'Category', 'Stock', 'Actions'].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-[11px] font-bold text-[#7a7974] uppercase tracking-wider whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#f3f0ec]">
-              {data?.items?.map((med: any) => (
-                <tr key={med.id} className="hover:bg-[#f9f8f5] transition-colors">
-                  <td className="px-4 py-3">
-                    <p className="text-[13px] font-semibold text-[#28251d]">{med.name}</p>
-                    <p className="text-[10px] text-[#bab9b4] font-mono">{med.id.slice(-6)}</p>
-                  </td>
-                  <td className="px-4 py-3 text-[12px] text-[#7a7974]">{med.genericName}</td>
-                  <td className="px-4 py-3 text-[13px] font-bold text-primary">₹{med.price}</td>
-                  <td className="px-4 py-3 text-[12px] text-[#7a7974] line-through">₹{med.mrp}</td>
-                  <td className="px-4 py-3">
-                    <span className="text-[10px] font-semibold bg-[#f3f0ec] text-[#7a7974] px-2 py-0.5 rounded-md">
-                      {med.category}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => toggleMutation.mutate({ id: med.id, inStock: !med.inStock })}
-                      className="transition-colors"
-                    >
-                      {med.inStock
-                        ? <ToggleRight size={22} className="text-success" />
-                        : <ToggleLeft  size={22} className="text-[#bab9b4]" />}
-                    </button>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button className="p-1.5 rounded-lg hover:bg-[#f3f0ec] text-[#7a7974] hover:text-[#28251d] transition-colors">
-                      <Edit2 size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <Card>
+        {isLoading ? <Spinner /> : medicines.length === 0
+          ? <Empty icon={Pill} title="No medicines found" description="Add your first medicine." />
+          : <Table columns={columns} data={medicines} />
+        }
+      </Card>
     </div>
   );
 }

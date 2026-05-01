@@ -1,124 +1,112 @@
-import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { Search, Filter } from 'lucide-react';
-import api from '../api/axios';
-import { formatDistanceToNow } from 'date-fns';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { FileText, CheckCircle, XCircle } from 'lucide-react';
+import { format } from 'date-fns';
+import toast from 'react-hot-toast';
+import { adminPrescriptionsApi } from '@/services/api';
+import { Badge, Button, Card, Empty, Spinner, Table } from '@/components/ui';
 
-const STATUS_TABS = ['ALL', 'PENDING', 'VERIFIED', 'REJECTED'];
-
-export default function Prescriptions() {
-  const navigate = useNavigate();
-  const [tab,    setTab]    = useState('PENDING');
-  const [search, setSearch] = useState('');
-  const [page,   setPage]   = useState(1);
+export function PrescriptionsPage() {
+  const qc = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [notes,      setNotes]      = useState('');
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-prescriptions', tab, search, page],
-    queryFn:  () => api.get('/prescriptions/admin/list', {
-      params: { status: tab === 'ALL' ? undefined : tab, search, page, limit: 20 },
-    }).then((r) => r.data.data),
-    placeholderData: (prev) => prev,
+    queryKey: ['admin-rx'],
+    queryFn:  () => adminPrescriptionsApi.pending(),
   });
 
-  const STATUS_COLOR: Record<string, string> = {
-    PENDING:  'bg-amber-50 text-amber-700 border-amber-200',
-    VERIFIED: 'bg-green-50 text-green-700 border-green-200',
-    REJECTED: 'bg-red-50   text-red-700   border-red-200',
-  };
+  const verify = useMutation({
+    mutationFn: ({ id, status, notes }: { id: string; status: string; notes: string }) =>
+      adminPrescriptionsApi.verify(id, { status, notes }),
+    onSuccess: () => {
+      toast.success('Prescription updated');
+      setSelectedId(null);
+      setNotes('');
+      qc.invalidateQueries({ queryKey: ['admin-rx'] });
+    },
+    onError: () => toast.error('Failed to update prescription'),
+  });
+
+  const prescriptions = data?.data?.data ?? [];
+  const selected      = prescriptions.find((p: Record<string, unknown>) => p.id === selectedId);
+
+  const columns = [
+    { key: 'id',       header: 'ID',       render: (r: Record<string, unknown>) => <span className="font-mono text-xs text-text-muted">{String(r.id).slice(0, 8)}</span> },
+    { key: 'patient',  header: 'Patient',  render: (r: Record<string, unknown>) => <span>{(r.user as Record<string, unknown>)?.name as string}</span> },
+    { key: 'uploaded', header: 'Uploaded', render: (r: Record<string, unknown>) => <span className="text-xs text-text-muted">{format(new Date(r.createdAt as string), 'dd MMM yy')}</span> },
+    { key: 'status',   header: 'Status',   render: (r: Record<string, unknown>) => <Badge label={r.status as string} variant={r.status === 'APPROVED' ? 'success' : r.status === 'REJECTED' ? 'error' : 'warning'} /> },
+  ];
 
   return (
-    <div className="max-w-5xl space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-[#28251d]">Prescriptions</h1>
-        <span className="text-[13px] text-[#7a7974]">{data?.total ?? 0} total</span>
-      </div>
+    <div className="p-6 space-y-5">
+      <h1 className="text-lg font-bold text-text">Prescriptions</h1>
 
-      {/* Search + Tabs */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#bab9b4]" />
-          <input
-            value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search by patient name or phone…"
-            className="w-full pl-9 pr-4 py-2.5 bg-white border border-[#dcd9d5] rounded-xl text-sm outline-none focus:border-primary transition-colors"
-          />
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* List */}
+        <div className="lg:col-span-3">
+          <Card title={`Pending (${prescriptions.length})`}>
+            {isLoading ? <Spinner /> : prescriptions.length === 0
+              ? <Empty icon={FileText} title="All clear" description="No pending prescriptions." />
+              : <Table
+                  columns={columns}
+                  data={prescriptions}
+                  onRowClick={(r) => setSelectedId((r as Record<string, unknown>).id as string)}
+                />
+            }
+          </Card>
         </div>
-        <div className="flex gap-1 bg-white border border-[#dcd9d5] rounded-xl p-1">
-          {STATUS_TABS.map((t) => (
-            <button
-              key={t}
-              onClick={() => { setTab(t); setPage(1); }}
-              className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
-                tab === t ? 'bg-primary text-white' : 'text-[#7a7974] hover:text-[#28251d]'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
+
+        {/* Review panel */}
+        <div className="lg:col-span-2">
+          {selected ? (
+            <Card title="Review Prescription">
+              <div className="p-5 space-y-4">
+                <img
+                  src={selected.imageUrl as string}
+                  alt="Prescription"
+                  className="w-full rounded-lg border border-border object-contain max-h-72"
+                />
+                <div>
+                  <p className="text-xs text-text-muted mb-1">Patient</p>
+                  <p className="text-sm font-medium">{(selected.user as Record<string, unknown>)?.name as string}</p>
+                </div>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Pharmacist notes (optional)"
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={<CheckCircle size={14} />}
+                    loading={verify.isPending}
+                    onClick={() => verify.mutate({ id: selectedId!, status: 'APPROVED', notes })}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    icon={<XCircle size={14} />}
+                    loading={verify.isPending}
+                    onClick={() => verify.mutate({ id: selectedId!, status: 'REJECTED', notes })}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ) : (
+            <Card>
+              <Empty icon={FileText} title="Select a prescription" description="Click a row to review it." />
+            </Card>
+          )}
         </div>
       </div>
-
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-[#dcd9d5] overflow-hidden">
-        {isLoading ? (
-          <div className="py-16 text-center text-[#7a7974] text-sm">Loading…</div>
-        ) : !data?.items?.length ? (
-          <div className="py-16 text-center text-[#7a7974] text-sm">No prescriptions found.</div>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-[#dcd9d5] bg-[#f7f6f2]">
-                {['Patient', 'Submitted', 'Status', 'Action'].map((h) => (
-                  <th key={h} className="px-5 py-3 text-left text-[11px] font-bold text-[#7a7974] uppercase tracking-wider">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#f3f0ec]">
-              {data.items.map((rx: any) => (
-                <tr key={rx.id} className="hover:bg-[#f9f8f5] transition-colors">
-                  <td className="px-5 py-3.5">
-                    <p className="text-[13px] font-semibold text-[#28251d]">{rx.user?.name || 'Unknown'}</p>
-                    <p className="text-[11px] text-[#7a7974]">+91 {rx.user?.phone}</p>
-                  </td>
-                  <td className="px-5 py-3.5 text-[12px] text-[#7a7974]">
-                    {formatDistanceToNow(new Date(rx.createdAt), { addSuffix: true })}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <span className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border ${
-                      STATUS_COLOR[rx.status] || 'bg-gray-50 text-gray-600 border-gray-200'
-                    }`}>
-                      {rx.status}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <button
-                      onClick={() => navigate(`/prescriptions/${rx.id}`)}
-                      className="text-[12px] text-primary font-semibold hover:underline"
-                    >
-                      {rx.status === 'PENDING' ? 'Review →' : 'View →'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Pagination */}
-      {data?.totalPages > 1 && (
-        <div className="flex justify-center gap-2">
-          {Array.from({ length: data.totalPages }, (_, i) => i + 1).map((p) => (
-            <button
-              key={p} onClick={() => setPage(p)}
-              className={`w-8 h-8 rounded-lg text-[13px] font-semibold transition-colors ${
-                p === page ? 'bg-primary text-white' : 'bg-white border border-[#dcd9d5] text-[#7a7974] hover:border-primary'
-              }`}
-            >{p}</button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

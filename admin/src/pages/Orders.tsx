@@ -1,153 +1,75 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Search } from 'lucide-react';
-import toast from 'react-hot-toast';
-import api from '../api/axios';
+import { ShoppingBag } from 'lucide-react';
 import { format } from 'date-fns';
+import { adminOrdersApi } from '@/services/api';
+import { Badge, Card, Empty, Input, Spinner, Table } from '@/components/ui';
 
-const STATUS_TABS = ['ALL', 'PENDING', 'CONFIRMED', 'PACKED', 'DISPATCHED', 'DELIVERED', 'CANCELLED'];
-
-const STATUS_COLOR: Record<string, string> = {
-  PENDING:    'bg-amber-50 text-amber-700',
-  CONFIRMED:  'bg-teal-50 text-teal-700',
-  PACKED:     'bg-blue-50 text-blue-700',
-  DISPATCHED: 'bg-purple-50 text-purple-700',
-  DELIVERED:  'bg-green-50 text-green-700',
-  CANCELLED:  'bg-red-50   text-red-700',
+const STATUS_VARIANT: Record<string, 'default' | 'info' | 'success' | 'warning' | 'error'> = {
+  PENDING:    'warning',
+  CONFIRMED:  'info',
+  PACKED:     'info',
+  DISPATCHED: 'gold' as never,
+  DELIVERED:  'success',
+  CANCELLED:  'error',
 };
 
-const NEXT_STATUS: Record<string, string> = {
-  PENDING:    'CONFIRMED',
-  CONFIRMED:  'PACKED',
-  PACKED:     'DISPATCHED',
-  DISPATCHED: 'DELIVERED',
-};
-
-export default function Orders() {
-  const navigate     = useNavigate();
-  const queryClient  = useQueryClient();
-  const [tab,    setTab]    = useState('ALL');
+export function OrdersPage() {
+  const navigate  = useNavigate();
   const [search, setSearch] = useState('');
-  const [page,   setPage]   = useState(1);
+  const [status, setStatus] = useState('');
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-orders', tab, search, page],
-    queryFn:  () => api.get('/orders/admin/list', {
-      params: { status: tab === 'ALL' ? undefined : tab, search, page, limit: 20 },
-    }).then((r) => r.data.data),
-    placeholderData: (prev) => prev,
+    queryKey: ['admin-orders', search, status],
+    queryFn:  () => adminOrdersApi.list({ search: search || undefined, status: status || undefined }),
   });
 
-  const advanceMutation = useMutation({
-    mutationFn: ({ orderId, status }: any) =>
-      api.patch(`/orders/${orderId}/status`, { status }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
-      toast.success('Order status updated!');
-    },
-    onError: () => toast.error('Update failed'),
-  });
+  const orders = data?.data?.data ?? [];
+
+  const columns = [
+    { key: 'id',     header: 'Order ID',  render: (r: Record<string, unknown>) => <span className="font-mono text-xs text-text-muted">{String(r.id).slice(0, 8)}</span> },
+    { key: 'user',   header: 'Customer',  render: (r: Record<string, unknown>) => <span className="text-sm">{(r.user as Record<string, unknown>)?.name as string}</span> },
+    { key: 'items',  header: 'Items',     render: (r: Record<string, unknown>) => <span>{(r.items as unknown[])?.length ?? 0}</span> },
+    { key: 'total',  header: 'Total',     render: (r: Record<string, unknown>) => <span className="tabular-nums">₹{Number(r.total).toFixed(2)}</span> },
+    { key: 'status', header: 'Status',    render: (r: Record<string, unknown>) => <Badge label={r.status as string} variant={STATUS_VARIANT[r.status as string] ?? 'default'} /> },
+    { key: 'date',   header: 'Placed',    render: (r: Record<string, unknown>) => <span className="text-xs text-text-muted">{format(new Date(r.createdAt as string), 'dd MMM yy, hh:mm a')}</span> },
+  ];
 
   return (
-    <div className="max-w-6xl space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-[#28251d]">Orders</h1>
-        <span className="text-[13px] text-[#7a7974]">{data?.total ?? 0} total</span>
-      </div>
+    <div className="p-6 space-y-5">
+      <h1 className="text-lg font-bold text-text">Orders</h1>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#bab9b4]" />
-        <input
-          value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          placeholder="Search by customer name or order ID…"
-          className="w-full pl-9 pr-4 py-2.5 bg-white border border-[#dcd9d5] rounded-xl text-sm outline-none focus:border-primary transition-colors"
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <Input
+          placeholder="Search by order ID or customer"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-64"
         />
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          className="px-3 py-2 text-sm rounded-lg border border-border bg-white text-text focus:outline-none"
+        >
+          <option value="">All statuses</option>
+          {['PENDING','CONFIRMED','PACKED','DISPATCHED','DELIVERED','CANCELLED'].map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
       </div>
 
-      {/* Status tabs */}
-      <div className="flex gap-1 flex-wrap">
-        {STATUS_TABS.map((t) => (
-          <button
-            key={t} onClick={() => { setTab(t); setPage(1); }}
-            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wide transition-colors ${
-              tab === t ? 'bg-primary text-white' : 'bg-white border border-[#dcd9d5] text-[#7a7974] hover:border-primary'
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-[#dcd9d5] overflow-x-auto">
-        {isLoading ? (
-          <div className="py-16 text-center text-[#7a7974] text-sm">Loading…</div>
-        ) : !data?.items?.length ? (
-          <div className="py-16 text-center text-[#7a7974] text-sm">No orders found.</div>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-[#dcd9d5] bg-[#f7f6f2]">
-                {['Order ID', 'Customer', 'Date', 'Amount', 'Payment', 'Status', 'Action'].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-[11px] font-bold text-[#7a7974] uppercase tracking-wider whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#f3f0ec]">
-              {data.items.map((order: any) => (
-                <tr key={order.id} className="hover:bg-[#f9f8f5] transition-colors">
-                  <td className="px-4 py-3 text-[12px] font-mono text-[#7a7974]">
-                    #{order.id.slice(-6).toUpperCase()}
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="text-[13px] font-semibold text-[#28251d]">{order.user?.name || '—'}</p>
-                    <p className="text-[11px] text-[#7a7974]">+91 {order.user?.phone}</p>
-                  </td>
-                  <td className="px-4 py-3 text-[12px] text-[#7a7974] whitespace-nowrap">
-                    {format(new Date(order.createdAt), 'dd MMM, h:mm a')}
-                  </td>
-                  <td className="px-4 py-3 text-[13px] font-bold text-[#28251d]">₹{order.totalAmount}</td>
-                  <td className="px-4 py-3">
-                    <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${
-                      order.paymentMethod === 'COD' ? 'bg-gray-100 text-gray-600' : 'bg-teal-50 text-teal-700'
-                    }`}>
-                      {order.paymentMethod}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`text-[11px] font-bold px-2.5 py-1 rounded-lg ${
-                      STATUS_COLOR[order.status] || 'bg-gray-50 text-gray-600'
-                    }`}>
-                      {order.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => navigate(`/orders/${order.id}`)}
-                        className="text-[11px] text-primary font-semibold hover:underline"
-                      >
-                        View
-                      </button>
-                      {NEXT_STATUS[order.status] && (
-                        <button
-                          onClick={() => advanceMutation.mutate({ orderId: order.id, status: NEXT_STATUS[order.status] })}
-                          disabled={advanceMutation.isPending}
-                          className="text-[11px] font-bold text-white bg-primary px-2.5 py-1 rounded-lg hover:bg-primary-hover transition-colors disabled:opacity-60 whitespace-nowrap"
-                        >
-                          → {NEXT_STATUS[order.status]}
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <Card>
+        {isLoading ? <Spinner /> : orders.length === 0
+          ? <Empty icon={ShoppingBag} title="No orders found" description="Try adjusting your filters." />
+          : <Table
+              columns={columns}
+              data={orders}
+              onRowClick={(r) => navigate(`/orders/${(r as Record<string, unknown>).id}`)}
+            />
+        }
+      </Card>
     </div>
   );
 }
