@@ -1,41 +1,42 @@
-# ─── Base ─────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS base
+# ── Stage 1: deps ────────────────────────────────
+FROM node:20-alpine AS deps
 WORKDIR /app
-RUN apk add --no-cache curl
 COPY package*.json ./
+RUN npm ci --omit=dev
 
-# ─── Dependencies ─────────────────────────────────────────────────────────
-FROM base AS deps
-RUN npm ci --only=production && cp -R node_modules /tmp/prod_modules
+# ── Stage 2: build ───────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
 RUN npm ci
-
-# ─── Build ────────────────────────────────────────────────────────────────
-FROM deps AS builder
 COPY . .
-RUN npm run build
 RUN npx prisma generate
+RUN npm run build
 
-# ─── Development ──────────────────────────────────────────────────────────
-FROM deps AS development
+# ── Stage 3: development (used by docker-compose.dev.yml) ──
+FROM node:20-alpine AS development
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
 COPY . .
-EXPOSE 3000 9229
+RUN npx prisma generate
+EXPOSE 3000
 CMD ["npm", "run", "start:dev"]
 
-# ─── Production ───────────────────────────────────────────────────────────
+# ── Stage 4: production ──────────────────────────
 FROM node:20-alpine AS production
 WORKDIR /app
-
-# Security: run as non-root user
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser  --system --uid 1001 nestjs
-
-COPY --from=builder /tmp/prod_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
+ENV NODE_ENV=production
+COPY --from=deps    /app/node_modules  ./node_modules
+COPY --from=builder /app/dist          ./dist
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY prisma ./prisma
 COPY package*.json ./
 
-USER nestjs
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
 EXPOSE 3000
 
-# Run DB migrations then start server
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+# Run migrations then start the server
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
