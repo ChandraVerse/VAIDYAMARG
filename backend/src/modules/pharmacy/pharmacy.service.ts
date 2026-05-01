@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { subDays, format, startOfDay, endOfDay } from 'date-fns';
+import { subDays, format } from 'date-fns';
 
 @Injectable()
 export class PharmacyService {
@@ -10,14 +10,16 @@ export class PharmacyService {
   // Dashboard KPIs
   // ---------------------------------------------------------------------------
   async getDashboardStats() {
-    const [totalOrders, totalUsers, pendingRx, revenue] = await Promise.all([
+    const [totalOrders, totalUsers, pendingRx, revenue, lowStock] = await Promise.all([
       this.prisma.order.count(),
-      this.prisma.user.count(),
+      this.prisma.user.count({ where: { role: 'PATIENT' } }),
       this.prisma.prescription.count({ where: { status: 'PENDING' } }),
+      // ✅ correct field: totalAmount (not "total")
       this.prisma.order.aggregate({
-        _sum: { total: true },
+        _sum: { totalAmount: true },
         where: { status: { notIn: ['CANCELLED'] } },
       }),
+      this.prisma.medicine.count({ where: { stock: { lte: 10 }, isActive: true } }),
     ]);
 
     return {
@@ -26,7 +28,8 @@ export class PharmacyService {
         totalOrders,
         totalUsers,
         pendingRx,
-        totalRevenue: Number(revenue._sum.total ?? 0),
+        totalRevenue: Number(revenue._sum.totalAmount ?? 0),
+        lowStockAlerts: lowStock,
       },
     };
   }
@@ -37,12 +40,13 @@ export class PharmacyService {
   async getRevenueChart() {
     const since = subDays(new Date(), 30);
 
+    // ✅ correct field: totalAmount (not "total")
     const orders = await this.prisma.order.findMany({
       where: {
         createdAt: { gte: since },
         status: { notIn: ['CANCELLED'] },
       },
-      select: { total: true, createdAt: true },
+      select: { totalAmount: true, createdAt: true },
     });
 
     const map: Record<string, number> = {};
@@ -51,7 +55,7 @@ export class PharmacyService {
     }
     for (const o of orders) {
       const key = format(o.createdAt, 'dd MMM');
-      if (key in map) map[key] += Number(o.total);
+      if (key in map) map[key] += Number(o.totalAmount);
     }
 
     return {
@@ -68,7 +72,7 @@ export class PharmacyService {
 
     const orders = await this.prisma.order.findMany({
       where: { createdAt: { gte: since } },
-      select: { createdAt: true },
+      select: { createdAt: true, status: true },
     });
 
     const map: Record<string, number> = {};
@@ -84,5 +88,25 @@ export class PharmacyService {
       success: true,
       data: Object.entries(map).map(([date, orders]) => ({ date, orders })),
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin: list users
+  // ---------------------------------------------------------------------------
+  async getUsers(page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, name: true, phone: true, email: true,
+          role: true, isActive: true, createdAt: true,
+        },
+      }),
+      this.prisma.user.count(),
+    ]);
+    return { success: true, data: users, total, page, limit };
   }
 }

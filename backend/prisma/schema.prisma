@@ -53,10 +53,10 @@ model Medicine {
   brandName    String?
   manufacturer String?
   category     String
-  dosageForm   String   // tablet, syrup, injection, etc.
-  strength     String   // e.g. 500mg, 10ml
-  mrp          Float    // Maximum Retail Price (branded)
-  genericPrice Float    // Our generic price
+  dosageForm   String
+  strength     String
+  mrp          Float
+  genericPrice Float
   discount     Float    @default(0)
   stock        Int      @default(0)
   imageUrl     String?
@@ -75,19 +75,19 @@ model Medicine {
 // ORDER
 // ============================================================
 model Order {
-  id             String        @id @default(cuid())
-  userId         String
-  user           User          @relation(fields: [userId], references: [id])
-  prescriptionId String?
-  prescription   Prescription? @relation(fields: [prescriptionId], references: [id])
-  status         OrderStatus   @default(PENDING)
-  totalAmount    Float
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  prescriptionId  String?
+  prescription    Prescription? @relation(fields: [prescriptionId], references: [id])
+  status          OrderStatus   @default(PENDING)
+  totalAmount     Float
   deliveryAddress String
-  paymentStatus  PaymentStatus @default(PENDING)
-  paymentId      String?       // Razorpay payment / order ID
-  notes          String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  paymentStatus   PaymentStatus @default(PENDING)
+  paymentId       String?
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   items OrderItem[]
 
@@ -127,18 +127,28 @@ enum PaymentStatus {
 // PRESCRIPTION
 // ============================================================
 model Prescription {
-  id          String             @id @default(cuid())
-  userId      String
-  user        User               @relation(fields: [userId], references: [id])
-  imageUrl    String             // Cloudinary URL
-  status      PrescriptionStatus @default(PENDING)
-  ocrData     Json?              // Raw OCR output
-  medicines   Json?              // Extracted medicine list
-  doctorName  String?
-  patientName String?
-  issuedDate  DateTime?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  id               String             @id @default(cuid())
+  userId           String
+  user             User               @relation(fields: [userId], references: [id])
+  imageUrl         String             // Cloudinary URL
+  publicId         String?            // Cloudinary public_id for deletion
+  status           PrescriptionStatus @default(PENDING)
+  fileType         String?            // MIME type
+  fileName         String?            // original filename
+  fileSize         Int?               // bytes
+  ocrData          Json?              // Raw OCR output
+  ocrResult        String?            // Serialised OCR result (medicines list)
+  ocrProcessedAt   DateTime?          // When OCR completed
+  medicines        Json?              // Extracted medicine list
+  doctorName       String?
+  patientName      String?
+  issuedDate       DateTime?
+  verifiedById     String?            // Pharmacist user ID
+  verifiedAt       DateTime?
+  rejectionReason  String?
+  pharmacistNotes  String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
   orders Order[]
 
@@ -149,6 +159,8 @@ enum PrescriptionStatus {
   PENDING
   VERIFIED
   REJECTED
+  OCR_PROCESSING
+  OCR_COMPLETE
 }
 
 // ============================================================
@@ -161,7 +173,7 @@ model Notification {
   type      NotificationType
   title     String
   body      String
-  metadata  String?          // JSON string of extra data
+  metadata  String?
   isRead    Boolean          @default(false)
   readAt    DateTime?
   createdAt DateTime         @default(now())

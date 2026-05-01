@@ -1,7 +1,11 @@
 import {
-  WebSocketGateway, WebSocketServer,
-  SubscribeMessage, MessageBody, ConnectedSocket,
-  OnGatewayConnection, OnGatewayDisconnect,
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  MessageBody,
+  ConnectedSocket,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
@@ -15,16 +19,16 @@ export class OrderGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(OrderGateway.name);
 
   handleConnection(client: Socket) {
-    this.logger.log(`Client connected: ${client.id}`);
+    this.logger.log(`WS client connected: ${client.id}`);
   }
 
   handleDisconnect(client: Socket) {
-    this.logger.log(`Client disconnected: ${client.id}`);
+    this.logger.log(`WS client disconnected: ${client.id}`);
   }
 
   /**
-   * Patient joins a room keyed by their userId so they receive
-   * updates only for their own orders.
+   * Patient sends { userId } to join their personal room.
+   * All order updates for this user are pushed to this room.
    */
   @SubscribeMessage('join_user_room')
   handleJoin(
@@ -36,11 +40,14 @@ export class OrderGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
-   * Called by AdminOrdersService when an order status changes.
-   * Emits 'order_updated' to everyone in the patient's room.
+   * Called by OrdersService whenever an order status changes.
+   * Unified method name used consistently across the codebase.
+   *
+   * Previously named notifyOrderUpdate — renamed to emitOrderUpdate
+   * to match orders.service.ts call sites.
    */
-  notifyOrderUpdate(userId: string, orderId: string, status: string) {
+  emitOrderUpdate(orderId: string, userId: string, status: string) {
     this.server.to(`user_${userId}`).emit('order_updated', { orderId, status });
-    this.logger.log(`Emitted order_updated -> user_${userId}: ${orderId} = ${status}`);
+    this.logger.log(`[WS] order_updated → user_${userId}: ${orderId} = ${status}`);
   }
 }
