@@ -1,31 +1,25 @@
-import { Type } from 'class-transformer';
 import {
-  IsArray, IsEnum, IsInt, IsOptional, IsString, IsUUID, Min, ValidateNested,
+  IsString, IsNotEmpty, IsOptional,
+  IsArray, ValidateNested, IsNumber, Min, IsInt,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-
-export enum PaymentMethod {
-  UPI     = 'UPI',
-  CARD    = 'CARD',
-  NETBANKING = 'NETBANKING',
-  COD     = 'COD',
-}
+import { Type } from 'class-transformer';
 
 export class OrderItemDto {
-  @ApiProperty({ description: 'UUID of the medicine', example: 'c2a8e3f0-...' })
-  @IsUUID()
+  @ApiProperty({ example: 'seed-med-001', description: 'Medicine ID (cuid)' })
+  @IsString() @IsNotEmpty()
   medicineId: string;
 
-  @ApiProperty({ description: 'Quantity to order', example: 2, minimum: 1 })
-  @IsInt()
-  @Min(1)
+  @ApiProperty({ example: 2, minimum: 1 })
+  @IsInt() @Min(1)
   quantity: number;
 }
 
 export class CreateOrderDto {
   @ApiProperty({
-    description: 'List of medicines and quantities',
     type: [OrderItemDto],
+    description: 'At least one item required',
+    example: [{ medicineId: 'seed-med-001', quantity: 2 }],
   })
   @IsArray()
   @ValidateNested({ each: true })
@@ -33,31 +27,17 @@ export class CreateOrderDto {
   items: OrderItemDto[];
 
   @ApiProperty({
-    description: 'Payment method',
-    enum: PaymentMethod,
-    example: PaymentMethod.UPI,
+    example: '7 Nehru Nagar, Jaipur, Rajasthan 302001',
+    description: 'Full delivery address as a single string',
   })
-  @IsEnum(PaymentMethod)
-  paymentMethod: PaymentMethod;
+  @IsString() @IsNotEmpty()
+  deliveryAddress: string;
 
-  @ApiPropertyOptional({
-    description: 'Delivery address ID (from user address book)',
-    example: 'a1b2c3d4-...',
-  })
-  @IsOptional()
-  @IsUUID()
-  addressId?: string;
-
-  @ApiPropertyOptional({
-    description: 'Prescription ID (required for Rx medicines)',
-    example: 'b5c6d7e8-...',
-  })
-  @IsOptional()
-  @IsUUID()
+  @ApiPropertyOptional({ example: 'seed-rx-001', description: 'Prescription ID if order requires Rx medicines' })
+  @IsOptional() @IsString()
   prescriptionId?: string;
 
-  @ApiPropertyOptional({ description: 'Optional delivery note', example: 'Ring doorbell twice' })
-  @IsOptional()
-  @IsString()
-  deliveryNote?: string;
+  @ApiPropertyOptional({ example: 'Please deliver before 6 PM' })
+  @IsOptional() @IsString()
+  notes?: string;
 }

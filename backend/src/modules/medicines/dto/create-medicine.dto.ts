@@ -1,76 +1,60 @@
 import {
-  IsString,
-  IsNumber,
-  IsBoolean,
-  IsOptional,
-  IsPositive,
-  Min,
-  Max,
-  IsUrl,
+  IsString, IsNumber, IsBoolean, IsOptional,
+  IsNotEmpty, Min, Max,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export class CreateMedicineDto {
-  @ApiProperty({ example: 'Paracetamol 500mg' })
-  @IsString()
+  @ApiProperty({ example: 'Amoxicillin 500mg' })
+  @IsString() @IsNotEmpty()
   name: string;
 
-  @ApiProperty({ example: 'Paracetamol' })
-  @IsString()
+  @ApiProperty({ example: 'Amoxicillin', description: 'INN / generic name' })
+  @IsString() @IsNotEmpty()
   genericName: string;
 
-  @ApiPropertyOptional({ example: 'Crocin 500' })
-  @IsOptional()
-  @IsString()
+  @ApiPropertyOptional({ example: 'Mox' })
+  @IsOptional() @IsString()
   brandName?: string;
 
-  @ApiPropertyOptional({ example: 'GSK Pharmaceuticals' })
-  @IsOptional()
-  @IsString()
+  @ApiPropertyOptional({ example: 'Ranbaxy' })
+  @IsOptional() @IsString()
   manufacturer?: string;
 
-  @ApiProperty({ example: 'Analgesic' })
-  @IsString()
+  @ApiProperty({ example: 'Antibiotic' })
+  @IsString() @IsNotEmpty()
   category: string;
 
-  @ApiProperty({ example: 'Tablet', description: 'tablet / syrup / capsule / injection / ointment' })
-  @IsString()
+  @ApiProperty({ example: 'Capsule', description: 'Tablet | Capsule | Syrup | Injection | Cream | Drops' })
+  @IsString() @IsNotEmpty()
   dosageForm: string;
 
   @ApiProperty({ example: '500mg' })
-  @IsString()
+  @IsString() @IsNotEmpty()
   strength: string;
 
-  @ApiProperty({ example: 30.00, description: 'MRP — branded price in INR' })
-  @IsNumber()
-  @IsPositive()
+  @ApiProperty({ example: 85.00, description: 'Maximum retail price in INR' })
+  @Type(() => Number) @IsNumber() @Min(0)
   mrp: number;
 
-  @ApiProperty({ example: 8.50, description: 'Our generic price in INR' })
-  @IsNumber()
-  @IsPositive()
+  @ApiProperty({ example: 32.00, description: 'Generic / discounted price in INR' })
+  @Type(() => Number) @IsNumber() @Min(0)
   genericPrice: number;
 
-  @ApiPropertyOptional({ example: 0, description: 'Additional discount percentage' })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Max(100)
+  @ApiPropertyOptional({ example: 10, description: 'Discount percentage 0–100', default: 0 })
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100)
   discount?: number;
 
-  @ApiPropertyOptional({ example: 500, description: 'Available stock units' })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
+  @ApiPropertyOptional({ example: 500, default: 0 })
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0)
   stock?: number;
 
-  @ApiPropertyOptional({ example: 'https://res.cloudinary.com/...' })
-  @IsOptional()
-  @IsUrl()
+  @ApiPropertyOptional({ example: 'https://res.cloudinary.com/demo/image/upload/sample.jpg' })
+  @IsOptional() @IsString()
   imageUrl?: string;
 
-  @ApiPropertyOptional({ example: false, description: 'Does this medicine require a prescription?' })
-  @IsOptional()
-  @IsBoolean()
+  @ApiPropertyOptional({ example: true, default: false, description: 'Requires prescription' })
+  @IsOptional() @IsBoolean()
   requiresRx?: boolean;
 }

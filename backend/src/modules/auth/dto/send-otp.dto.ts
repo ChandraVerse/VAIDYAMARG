@@ -1,12 +1,13 @@
-import { IsString, IsMobilePhone } from 'class-validator';
+import { IsString, IsPhoneNumber, IsNotEmpty } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class SendOtpDto {
   @ApiProperty({
-    description: 'Indian mobile number (10 digits, without country code)',
-    example: '9876543210',
+    description: 'Mobile number in E.164 format',
+    example: '+919876543210',
   })
   @IsString()
-  @IsMobilePhone('en-IN')
+  @IsNotEmpty()
+  @IsPhoneNumber()
   phone: string;
 }

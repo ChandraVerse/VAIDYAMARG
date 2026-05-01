@@ -1,36 +1,28 @@
-import { IsOptional, IsString, IsEmail, IsDateString, IsEnum, MaxLength } from 'class-validator';
+import { IsString, IsEmail, IsOptional, Length } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
-enum Gender {
-  MALE = 'MALE',
-  FEMALE = 'FEMALE',
-  OTHER = 'OTHER',
-}
-
 export class UpdateProfileDto {
-  @ApiPropertyOptional({ example: 'Chandra Sekhar' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
+  @ApiPropertyOptional({ example: 'Priya Sharma' })
+  @IsOptional() @IsString()
   name?: string;
 
-  @ApiPropertyOptional({ example: 'chandra@email.com' })
-  @IsOptional()
-  @IsEmail()
+  @ApiPropertyOptional({ example: 'priya.sharma@gmail.com' })
+  @IsOptional() @IsEmail()
   email?: string;
 
-  @ApiPropertyOptional({ example: 'https://cloudinary.com/avatar.jpg' })
-  @IsOptional()
-  @IsString()
-  avatar?: string;
+  @ApiPropertyOptional({ example: '7 Nehru Nagar' })
+  @IsOptional() @IsString()
+  address?: string;
 
-  @ApiPropertyOptional({ example: '1995-08-15' })
-  @IsOptional()
-  @IsDateString()
-  dateOfBirth?: string;
+  @ApiPropertyOptional({ example: 'Jaipur' })
+  @IsOptional() @IsString()
+  city?: string;
 
-  @ApiPropertyOptional({ enum: Gender })
-  @IsOptional()
-  @IsEnum(Gender)
-  gender?: Gender;
+  @ApiPropertyOptional({ example: 'Rajasthan' })
+  @IsOptional() @IsString()
+  state?: string;
+
+  @ApiPropertyOptional({ example: '302001', minLength: 6, maxLength: 6 })
+  @IsOptional() @IsString() @Length(6, 6)
+  pincode?: string;
 }
