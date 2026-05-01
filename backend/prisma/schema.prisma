@@ -14,22 +14,25 @@ datasource db {
 // USER
 // ============================================================
 model User {
-  id          String   @id @default(cuid())
-  phone       String   @unique
-  name        String?
-  email       String?  @unique
-  address     String?
-  city        String?
-  state       String?
-  pincode     String?
-  role        Role     @default(PATIENT)
-  isVerified  Boolean  @default(false)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  phone      String   @unique
+  name       String?
+  email      String?  @unique
+  address    String?
+  city       String?
+  state      String?
+  pincode    String?
+  role       Role     @default(PATIENT)
+  isVerified Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  fcmToken   String?  // Firebase Cloud Messaging device token
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  orders        Order[]
-  prescriptions Prescription[]
+  orders          Order[]
+  prescriptions   Prescription[]
+  notifications   Notification[]
+  refillReminders RefillReminder[]
 
   @@map("users")
 }
@@ -44,25 +47,26 @@ enum Role {
 // MEDICINE
 // ============================================================
 model Medicine {
-  id            String   @id @default(cuid())
-  name          String
-  genericName   String
-  brandName     String?
-  manufacturer  String?
-  category      String
-  dosageForm    String   // tablet, syrup, injection, etc.
-  strength      String   // e.g. 500mg, 10ml
-  mrp           Float    // Maximum Retail Price (branded)
-  genericPrice  Float    // Our generic price
-  discount      Float    @default(0)
-  stock         Int      @default(0)
-  imageUrl      String?
-  requiresRx    Boolean  @default(false) // Needs prescription?
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(cuid())
+  name         String
+  genericName  String
+  brandName    String?
+  manufacturer String?
+  category     String
+  dosageForm   String   // tablet, syrup, injection, etc.
+  strength     String   // e.g. 500mg, 10ml
+  mrp          Float    // Maximum Retail Price (branded)
+  genericPrice Float    // Our generic price
+  discount     Float    @default(0)
+  stock        Int      @default(0)
+  imageUrl     String?
+  requiresRx   Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  orderItems OrderItem[]
+  orderItems      OrderItem[]
+  refillReminders RefillReminder[]
 
   @@map("medicines")
 }
@@ -71,19 +75,19 @@ model Medicine {
 // ORDER
 // ============================================================
 model Order {
-  id              String      @id @default(cuid())
-  userId          String
-  user            User        @relation(fields: [userId], references: [id])
-  prescriptionId  String?
-  prescription    Prescription? @relation(fields: [prescriptionId], references: [id])
-  status          OrderStatus @default(PENDING)
-  totalAmount     Float
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id])
+  prescriptionId String?
+  prescription   Prescription? @relation(fields: [prescriptionId], references: [id])
+  status         OrderStatus   @default(PENDING)
+  totalAmount    Float
   deliveryAddress String
-  paymentStatus   PaymentStatus @default(PENDING)
-  paymentId       String?     // Razorpay payment ID
-  notes           String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  paymentStatus  PaymentStatus @default(PENDING)
+  paymentId      String?       // Razorpay payment / order ID
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   items OrderItem[]
 
@@ -123,18 +127,18 @@ enum PaymentStatus {
 // PRESCRIPTION
 // ============================================================
 model Prescription {
-  id           String             @id @default(cuid())
-  userId       String
-  user         User               @relation(fields: [userId], references: [id])
-  imageUrl     String             // Cloudinary URL
-  status       PrescriptionStatus @default(PENDING)
-  ocrData      Json?              // Raw OCR output
-  medicines    Json?              // Extracted medicine list
-  doctorName   String?
-  patientName  String?
-  issuedDate   DateTime?
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  id          String             @id @default(cuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id])
+  imageUrl    String             // Cloudinary URL
+  status      PrescriptionStatus @default(PENDING)
+  ocrData     Json?              // Raw OCR output
+  medicines   Json?              // Extracted medicine list
+  doctorName  String?
+  patientName String?
+  issuedDate  DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
 
   orders Order[]
 
@@ -145,4 +149,57 @@ enum PrescriptionStatus {
   PENDING
   VERIFIED
   REJECTED
+}
+
+// ============================================================
+// NOTIFICATION
+// ============================================================
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  metadata  String?          // JSON string of extra data
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  ORDER_PLACED
+  ORDER_CONFIRMED
+  ORDER_PACKED
+  ORDER_DISPATCHED
+  ORDER_DELIVERED
+  ORDER_CANCELLED
+  PRESCRIPTION_VERIFIED
+  PRESCRIPTION_REJECTED
+  LOW_STOCK_ALERT
+  PAYMENT_SUCCESS
+  REFILL_REMINDER
+}
+
+// ============================================================
+// REFILL REMINDER
+// ============================================================
+model RefillReminder {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  medicineId   String
+  medicine     Medicine @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+  intervalDays Int      @default(30)
+  enabled      Boolean  @default(true)
+  nextRemindAt DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, medicineId])
+  @@map("refill_reminders")
 }

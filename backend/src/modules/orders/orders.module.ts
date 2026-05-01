@@ -2,12 +2,21 @@ import { Module } from '@nestjs/common';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 import { PaymentService } from './payment.service';
+import { OrderGateway } from './order.gateway';
+import { AdminOrdersController } from './admin-orders.controller';
+import { AdminOrdersService } from './admin-orders.service';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { RemindersModule } from '../reminders/reminders.module';
 
 @Module({
-  imports: [PrismaModule],
-  controllers: [OrdersController],
-  providers: [OrdersService, PaymentService],
+  imports: [
+    PrismaModule,
+    NotificationsModule, // provides NotificationsService
+    RemindersModule,     // provides RemindersService
+  ],
+  controllers: [OrdersController, AdminOrdersController],
+  providers: [OrdersService, PaymentService, OrderGateway, AdminOrdersService],
   exports: [OrdersService],
 })
 export class OrdersModule {}

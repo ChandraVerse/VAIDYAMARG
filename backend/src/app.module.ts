@@ -1,31 +1,60 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { BullModule } from '@nestjs/bull';
+import { ScheduleModule } from '@nestjs/schedule';
+
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
+import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
+import { MedicinesModule } from './modules/medicines/medicines.module';
+import { OrdersModule } from './modules/orders/orders.module';
+import { PrescriptionsModule } from './modules/prescriptions/prescriptions.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { PharmacyModule } from './modules/pharmacy/pharmacy.module';
+import { RemindersModule } from './modules/reminders/reminders.module';
+import { PrismaModule } from './prisma/prisma.module';
+
 @Module({
   imports: [
-    // Global config — reads .env file
+    // ── Global config ──────────────────────────────────────────────────────
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
     }),
 
-    // Rate limiting — prevent API abuse
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000,  // 1 minute window
-        limit: 100,  // 100 requests per window
-      },
-    ]),
+    // ── Rate limiting ──────────────────────────────────────────────────────
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
 
-    // Feature modules will be added here one by one:
-    // AuthModule
-    // UsersModule
-    // MedicinesModule
-    // OrdersModule
-    // PrescriptionsModule
+    // ── Bull / Redis (shared queue connection) ────────────────────────────
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        redis: {
+          host: config.get<string>('REDIS_HOST', 'localhost'),
+          port: config.get<number>('REDIS_PORT', 6379),
+          password: config.get<string>('REDIS_PASSWORD') || undefined,
+        },
+      }),
+    }),
+
+    // ── Cron / task scheduling ─────────────────────────────────────────────
+    ScheduleModule.forRoot(),
+
+    // ── Shared infra ───────────────────────────────────────────────────────
+    PrismaModule,
+
+    // ── Feature modules ───────────────────────────────────────────────────
+    AuthModule,
+    UsersModule,
+    MedicinesModule,
+    OrdersModule,
+    PrescriptionsModule,
+    NotificationsModule,
+    PharmacyModule,
+    RemindersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
