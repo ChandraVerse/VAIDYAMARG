@@ -7,16 +7,27 @@ import App from './App';
 import './index.css';
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
+  defaultOptions: {
+    queries: {
+      retry:     2,
+      staleTime: 1000 * 60 * 2,
+    },
+  },
 });
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+    <BrowserRouter>
+      <QueryClientProvider client={queryClient}>
         <App />
-        <Toaster position="top-right" toastOptions={{ duration: 3500 }} />
-      </BrowserRouter>
-    </QueryClientProvider>
-  </React.StrictMode>
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            style: { fontFamily: 'Inter, sans-serif', fontSize: '14px' },
+            success: { iconTheme: { primary: '#01696f', secondary: '#fff' } },
+          }}
+        />
+      </QueryClientProvider>
+    </BrowserRouter>
+  </React.StrictMode>,
 );
