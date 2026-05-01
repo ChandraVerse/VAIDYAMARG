@@ -338,7 +338,8 @@ VAIDYAMARG/
 |
 +-- admin/                          # Vite + React Admin Dashboard
 |   +-- src/
-|   |   +-- pages/                  # Dashboard, Orders, Prescriptions, Analytics
+|   |   +-- pages/                  # Dashboard, Orders, Prescriptions, Analytics,
+|   |   |                           # Partners, PartnerDetail, MedicineForm, Users
 |   |   +-- components/             # Layout, shared UI
 |   |   +-- store/                  # Zustand auth store
 |   |   +-- api/                    # Axios client with interceptors
@@ -360,8 +361,10 @@ VAIDYAMARG/
 |   +-- workflows/
 |   |   +-- ci.yml                  # PR gate — lint + build + test (parallel)
 |   |   +-- docker-publish.yml      # Build + push images to GHCR on main/tags
+|   |   +-- docker.yml              # Docker build verification
 |   |   +-- deploy.yml              # SSH deploy via docker compose (manual + tags)
 |   |   +-- codeql.yml              # Weekly CodeQL security scan
+|   |   +-- release.yml             # Automated release notes on tag push
 |
 +-- docker-compose.yml              # Full stack orchestration (prod)
 +-- docker-compose.dev.yml          # Development overrides
@@ -479,20 +482,24 @@ Interactive Swagger docs available at `http://localhost:3000/api/docs` when runn
 ### Phase 2 — Core Features (Month 3–4) ✅
 - [x] Prescription upload and Cloudinary storage
 - [x] OCR prescription reader (Google Vision + Tesseract fallback + preprocessor)
-- [x] Push notifications (Firebase Cloud Messaging + MSG91 SMS)
-- [x] Refill reminders for chronic patients (NestJS cron scheduler, daily 08:00 IST)
-- [x] Admin dashboard — KPI stats + revenue/orders charts
-- [x] Admin orders and users management endpoints
+- [x] Real-time order tracking (Socket.io — `order.gateway.ts`, `/orders` namespace)
+- [x] Push notifications (Firebase Cloud Messaging — `fcm.service.ts` + `push.service.ts`)
+- [x] MSG91 SMS alerts (`sms.service.ts`)
+- [x] Refill reminders for chronic patients (NestJS cron scheduler — `reminders.scheduler.ts`, daily 08:00 IST)
+- [x] Admin dashboard — KPI stats + revenue/orders charts (`pharmacy` module)
+- [x] Admin orders and users management endpoints (`admin-orders.controller.ts`)
 - [x] Swagger API documentation (`/api/docs`)
-- [x] GitHub Actions CI/CD (4 workflows: CI · Docker Publish · Deploy · CodeQL)
-- [x] Database seed (20 medicines + 5 demo users + sample orders)
-- [ ] Real-time order tracking (Socket.io — `/orders` namespace) — *in progress*
+- [x] GitHub Actions CI/CD (6 workflows: CI · Docker · Docker Publish · Deploy · CodeQL · Release)
+- [x] Database seed (medicines + demo users + sample orders — `prisma/seed.ts`)
 
-### Phase 3 — Partner Ecosystem (Month 5–6)
+### Phase 3 — Partner Ecosystem (Month 5–6) 🚧
 - [x] Admin prescription verification workflow
-- [x] Partner registration and onboarding DTO + endpoint
-- [ ] Pharmacy partner web portal (self-service onboarding UI)
-- [ ] Partner analytics and earnings dashboard (UI)
+- [x] Partner registration and onboarding (backend: `partners` module — controller + service)
+- [x] Pharmacy partner admin pages (UI: `Partners.tsx`, `PartnerDetail.tsx`)
+- [x] Analytics dashboard UI (`Analytics.tsx`)
+- [x] Medicine management UI (`Medicines.tsx`, `MedicineForm.tsx`)
+- [ ] Partner self-service onboarding portal (standalone web UI for partners)
+- [ ] Partner earnings dashboard (partner-facing UI)
 - [ ] Inventory management UI for partners
 
 ### Phase 4 — Scale and Intelligence (Month 7+)
