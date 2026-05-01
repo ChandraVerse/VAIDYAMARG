@@ -1,213 +1,211 @@
-import React, { useState } from 'react';
-import {
-  View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, StatusBar, Alert,
-} from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { ScrollView, View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import Toast from 'react-native-toast-message';
-import { Colors } from '../../src/theme/colors';
-import { Button } from '../../src/components/ui/Button';
-import { medicinesApi } from '../../src/api/medicines.api';
-import { useCartStore } from '../../src/store/cart.store';
+import { Button, Card } from '@/components/ui';
+import { medicinesApi } from '@/services/api';
+import { useCartStore } from '@/stores/cart.store';
+import { COLORS, FONT_SIZE, SPACING, RADIUS } from '@/constants';
 
 export default function MedicineDetailScreen() {
-  const { id }    = useLocalSearchParams<{ id: string }>();
-  const router    = useRouter();
-  const addItem   = useCartStore((s) => s.addItem);
-  const [qty, setQty] = useState(1);
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const addItem = useCartStore((s) => s.addItem);
+  const cartItems = useCartStore((s) => s.items);
 
-  const { data: medicine, isLoading } = useQuery({
+  const { data: medicine, isLoading, isError } = useQuery({
     queryKey: ['medicine', id],
     queryFn:  () => medicinesApi.detail(id).then((r) => r.data.data),
+    enabled:  !!id,
   });
 
-  const { data: comparison } = useQuery({
-    queryKey: ['compare', medicine?.name],
-    queryFn:  () => medicinesApi.compare(medicine.name).then((r) => r.data.data),
-    enabled:  !!medicine?.name,
-  });
+  const inCart = cartItems.some((i) => i.medicineId === id);
 
-  if (isLoading || !medicine) {
+  const handleAddToCart = () => {
+    if (!medicine) return;
+    addItem({
+      medicineId:           medicine.id,
+      name:                 medicine.name,
+      price:                medicine.price,
+      imageUrl:             medicine.imageUrl ?? null,
+      requiresPrescription: medicine.requiresPrescription ?? false,
+    });
+    Toast.show({ type: 'success', text1: 'Added to cart', text2: medicine.name });
+  };
+
+  if (isLoading) {
     return (
-      <View style={styles.center}>
-        <Text style={{ fontSize: 32 }}>💊</Text>
-        <Text style={{ color: Colors.textMuted, marginTop: 8 }}>Loading…</Text>
-      </View>
+      <SafeAreaView style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </SafeAreaView>
     );
   }
 
-  const savings = medicine.mrp - medicine.price;
-  const savingsPct = Math.round((savings / medicine.mrp) * 100);
+  if (isError || !medicine) {
+    return (
+      <SafeAreaView style={[styles.container, styles.center]}>
+        <Text style={styles.errorText}>Could not load medicine details.</Text>
+        <Button label="Go back" onPress={() => router.back()} variant="ghost" style={{ marginTop: SPACING.lg }} />
+      </SafeAreaView>
+    );
+  }
 
-  const handleAddToCart = () => {
-    for (let i = 0; i < qty; i++) {
-      addItem({
-        medicineId:  medicine.id,
-        name:        medicine.name,
-        genericName: medicine.genericName,
-        price:       medicine.price,
-        mrp:         medicine.mrp,
-        unit:        medicine.unit,
-      });
-    }
-    Toast.show({ type: 'success', text1: `${medicine.name} added to cart`, text2: `${qty} unit${qty > 1 ? 's' : ''}` });
-  };
+  const discount = medicine.mrp && medicine.mrp > medicine.price
+    ? Math.round(((medicine.mrp - medicine.price) / medicine.mrp) * 100)
+    : 0;
 
   return (
-    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Text style={styles.backText}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.topBarTitle} numberOfLines={1}>Medicine Detail</Text>
+        <TouchableOpacity onPress={() => router.push('/(tabs)/cart')}>
+          <Text style={{ fontSize: 22 }}>🛒</Text>
+        </TouchableOpacity>
+      </View>
 
-        {/* ── Hero ────────────────────────────────────────────── */}
-        <View style={styles.hero}>
-          <Text style={styles.heroEmoji}>💊</Text>
-          {savingsPct > 0 && (
-            <View style={styles.saveBadge}>
-              <Text style={styles.saveBadgeText}>Save {savingsPct}%</Text>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Image placeholder */}
+        <View style={styles.imageContainer}>
+          <Text style={{ fontSize: 64 }}>💊</Text>
+        </View>
+
+        <View style={styles.body}>
+          {/* Name & manufacturer */}
+          <Text style={styles.name}>{medicine.name}</Text>
+          <Text style={styles.manufacturer}>{medicine.manufacturer}</Text>
+          <Text style={styles.form}>{medicine.form} · {medicine.strength}</Text>
+
+          {medicine.requiresPrescription && (
+            <View style={styles.rxBanner}>
+              <Text style={styles.rxText}>Prescription required for this medicine</Text>
             </View>
           )}
-          <Text style={styles.name}>{medicine.name}</Text>
-          <Text style={styles.generic}>{medicine.genericName}</Text>
-          <Text style={styles.category}>{medicine.category}</Text>
-        </View>
 
-        {/* ── Price Box ───────────────────────────────────────── */}
-        <View style={styles.priceBox}>
-          <View style={styles.priceCol}>
-            <Text style={styles.priceLabel}>Generic Price</Text>
-            <Text style={styles.priceMain}>₹{medicine.price}</Text>
-            <Text style={styles.priceUnit}>per {medicine.unit}</Text>
-          </View>
-          <View style={styles.priceDivider} />
-          <View style={styles.priceCol}>
-            <Text style={styles.priceLabel}>Brand MRP</Text>
-            <Text style={[styles.priceMain, styles.priceMrp]}>₹{medicine.mrp}</Text>
-            <Text style={[styles.priceUnit, { color: Colors.success }]}>Save ₹{savings}</Text>
-          </View>
-        </View>
-
-        {/* ── Brand vs Generic Comparison ─────────────────────── */}
-        {comparison?.brandVersions?.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Brand vs Generic Comparison</Text>
-            <View style={styles.compareTable}>
-              <View style={styles.compareHeader}>
-                <Text style={styles.compareHeaderText}>Brand</Text>
-                <Text style={styles.compareHeaderText}>Generic</Text>
-                <Text style={styles.compareHeaderText}>You Save</Text>
+          {/* Pricing */}
+          <Card style={styles.priceCard}>
+            <View style={styles.priceRow}>
+              <View>
+                <Text style={styles.price}>₹{medicine.price?.toFixed(2)}</Text>
+                {medicine.mrp && medicine.mrp > medicine.price && (
+                  <Text style={styles.mrp}>MRP ₹{medicine.mrp?.toFixed(2)}</Text>
+                )}
               </View>
-              {comparison.brandVersions.slice(0, 4).map((v: any, i: number) => (
-                <View key={i} style={styles.compareRow}>
-                  <Text style={styles.compareBrand}>{v.brandName}</Text>
-                  <Text style={styles.compareGeneric}>{medicine.genericName}</Text>
-                  <Text style={styles.compareSave}>₹{v.mrp - medicine.price}</Text>
+              {discount > 0 && (
+                <View style={styles.discountBadge}>
+                  <Text style={styles.discountText}>{discount}% off</Text>
                 </View>
-              ))}
+              )}
             </View>
-          </View>
-        )}
+            <Text style={styles.stockStatus}>
+              {medicine.stock > 0
+                ? `In stock · ${medicine.stock} units available`
+                : 'Out of stock'}
+            </Text>
+          </Card>
 
-        {/* ── Details ─────────────────────────────────────────── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Medicine Details</Text>
-          {[
-            { label: 'Generic Name',  value: medicine.genericName },
-            { label: 'Category',      value: medicine.category },
-            { label: 'Form',          value: medicine.form },
-            { label: 'Strength',      value: medicine.strength },
-            { label: 'Manufacturer',  value: medicine.manufacturer },
-            { label: 'HSN Code',      value: medicine.hsnCode },
-          ].filter(r => r.value).map(({ label, value }) => (
-            <View key={label} style={styles.detailRow}>
-              <Text style={styles.detailLabel}>{label}</Text>
-              <Text style={styles.detailValue}>{value}</Text>
+          {/* Key info */}
+          {medicine.composition && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Composition</Text>
+              <Text style={styles.sectionBody}>{medicine.composition}</Text>
             </View>
-          ))}
-        </View>
+          )}
 
-        {/* ── Qty Selector ─────────────────────────────────────── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quantity</Text>
-          <View style={styles.qtyRow}>
-            <TouchableOpacity
-              style={styles.qtyBtn}
-              onPress={() => setQty(Math.max(1, qty - 1))}
-            >
-              <Text style={styles.qtyBtnText}>−</Text>
-            </TouchableOpacity>
-            <Text style={styles.qtyValue}>{qty}</Text>
-            <TouchableOpacity
-              style={styles.qtyBtn}
-              onPress={() => setQty(Math.min(20, qty + 1))}
-            >
-              <Text style={styles.qtyBtnText}>+</Text>
-            </TouchableOpacity>
-            <Text style={styles.qtyTotal}>= ₹{(medicine.price * qty).toFixed(2)}</Text>
-          </View>
-        </View>
+          {medicine.description && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>About this medicine</Text>
+              <Text style={styles.sectionBody}>{medicine.description}</Text>
+            </View>
+          )}
 
-        <View style={{ height: 120 }} />
+          {medicine.sideEffects && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Common side effects</Text>
+              <Text style={styles.sectionBody}>{medicine.sideEffects}</Text>
+            </View>
+          )}
+
+          <View style={{ height: 100 }} />
+        </View>
       </ScrollView>
 
-      {/* ── Sticky Bottom CTA ────────────────────────────────── */}
+      {/* Sticky bottom CTA */}
       <View style={styles.stickyBottom}>
         <Button
-          title={medicine.inStock ? `Add to Cart · ₹${(medicine.price * qty).toFixed(2)}` : 'Out of Stock'}
-          onPress={handleAddToCart}
-          disabled={!medicine.inStock}
+          label={inCart ? 'Go to Cart' : medicine.stock > 0 ? 'Add to Cart' : 'Out of Stock'}
+          onPress={inCart ? () => router.push('/(tabs)/cart') : handleAddToCart}
+          disabled={medicine.stock <= 0}
           fullWidth
           size="lg"
+          variant={inCart ? 'secondary' : 'primary'}
         />
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  center:          { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.bg },
-  hero:            { backgroundColor: Colors.surface, padding: 24, alignItems: 'center',
-                     borderBottomWidth: 1, borderBottomColor: Colors.divider, position: 'relative' },
-  heroEmoji:       { fontSize: 64, marginBottom: 12 },
-  saveBadge:       { position: 'absolute', top: 16, right: 16, backgroundColor: Colors.success,
-                     borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
-  saveBadgeText:   { color: Colors.white, fontSize: 12, fontWeight: '700' },
-  name:            { fontSize: 22, fontWeight: '700', color: Colors.text, textAlign: 'center' },
-  generic:         { fontSize: 15, color: Colors.textMuted, marginTop: 4, textAlign: 'center' },
-  category:        { fontSize: 12, color: Colors.primary, marginTop: 6, textTransform: 'uppercase',
-                     letterSpacing: 1, fontWeight: '600' },
-  priceBox:        { flexDirection: 'row', backgroundColor: Colors.surface, margin: 16,
-                     borderRadius: 16, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden' },
-  priceCol:        { flex: 1, padding: 16, alignItems: 'center' },
-  priceDivider:    { width: 1, backgroundColor: Colors.divider },
-  priceLabel:      { fontSize: 11, color: Colors.textMuted, fontWeight: '600',
-                     textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
-  priceMain:       { fontSize: 28, fontWeight: '800', color: Colors.text },
-  priceMrp:        { textDecorationLine: 'line-through', color: Colors.textMuted, fontSize: 22 },
-  priceUnit:       { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  section:         { marginHorizontal: 16, marginBottom: 16 },
-  sectionTitle:    { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 12 },
-  compareTable:    { backgroundColor: Colors.surface, borderRadius: 14, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden' },
-  compareHeader:   { flexDirection: 'row', backgroundColor: Colors.surfaceOffset,
-                     paddingHorizontal: 12, paddingVertical: 8 },
-  compareHeaderText:{ flex: 1, fontSize: 11, fontWeight: '700', color: Colors.textMuted,
-                      textTransform: 'uppercase', letterSpacing: 0.5 },
-  compareRow:      { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 10,
-                     borderTopWidth: 1, borderTopColor: Colors.divider },
-  compareBrand:    { flex: 1, fontSize: 13, color: Colors.text, fontWeight: '500' },
-  compareGeneric:  { flex: 1, fontSize: 13, color: Colors.primary },
-  compareSave:     { flex: 1, fontSize: 13, color: Colors.success, fontWeight: '700' },
-  detailRow:       { flexDirection: 'row', justifyContent: 'space-between',
-                     paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.divider },
-  detailLabel:     { fontSize: 13, color: Colors.textMuted, fontWeight: '500' },
-  detailValue:     { fontSize: 13, color: Colors.text, fontWeight: '600', maxWidth: '55%', textAlign: 'right' },
-  qtyRow:          { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  qtyBtn:          { width: 40, height: 40, borderRadius: 10, backgroundColor: Colors.surface,
-                     borderWidth: 1.5, borderColor: Colors.border,
-                     justifyContent: 'center', alignItems: 'center' },
-  qtyBtnText:      { fontSize: 20, color: Colors.text, fontWeight: '600', lineHeight: 24 },
-  qtyValue:        { fontSize: 20, fontWeight: '700', color: Colors.text, minWidth: 32, textAlign: 'center' },
-  qtyTotal:        { fontSize: 16, fontWeight: '700', color: Colors.primary },
-  stickyBottom:    { position: 'absolute', bottom: 0, left: 0, right: 0,
-                     padding: 16, backgroundColor: Colors.surface,
-                     borderTopWidth: 1, borderTopColor: Colors.border },
+  container:      { flex: 1, backgroundColor: COLORS.bg },
+  center:         { alignItems: 'center', justifyContent: 'center' },
+  topBar: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    padding:        SPACING.xl,
+    paddingBottom:  SPACING.md,
+  },
+  backBtn:        { padding: SPACING.xs },
+  backText:       { fontSize: 22, color: COLORS.text },
+  topBarTitle:    { fontSize: FONT_SIZE.base, fontWeight: '600', color: COLORS.text, flex: 1, textAlign: 'center' },
+  imageContainer: {
+    height:         180,
+    backgroundColor: COLORS.surface,
+    alignItems:     'center',
+    justifyContent: 'center',
+  },
+  body:           { padding: SPACING.xl, gap: SPACING.sm },
+  name:           { fontSize: FONT_SIZE.xl, fontWeight: '700', color: COLORS.text },
+  manufacturer:   { fontSize: FONT_SIZE.sm, color: COLORS.textMuted },
+  form:           { fontSize: FONT_SIZE.sm, color: COLORS.textMuted },
+  rxBanner: {
+    backgroundColor: COLORS.warning + '18',
+    borderRadius:    RADIUS.md,
+    padding:         SPACING.md,
+    marginTop:       SPACING.xs,
+  },
+  rxText:         { fontSize: FONT_SIZE.sm, color: COLORS.warning, fontWeight: '500' },
+  priceCard:      { marginVertical: SPACING.md },
+  priceRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: SPACING.xs },
+  price:          { fontSize: FONT_SIZE.xl, fontWeight: '800', color: COLORS.primary },
+  mrp: {
+    fontSize:            FONT_SIZE.sm,
+    color:               COLORS.textFaint,
+    textDecorationLine:  'line-through',
+  },
+  discountBadge: {
+    backgroundColor: COLORS.success + '22',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical:  4,
+    borderRadius:    RADIUS.sm,
+  },
+  discountText:   { fontSize: FONT_SIZE.sm, color: COLORS.success, fontWeight: '700' },
+  stockStatus:    { fontSize: FONT_SIZE.sm, color: COLORS.textMuted },
+  section:        { gap: SPACING.xs, marginTop: SPACING.md },
+  sectionTitle:   { fontSize: FONT_SIZE.base, fontWeight: '700', color: COLORS.text },
+  sectionBody:    { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, lineHeight: 20 },
+  errorText:      { fontSize: FONT_SIZE.base, color: COLORS.error },
+  stickyBottom: {
+    position:        'absolute',
+    bottom:          0,
+    left:            0,
+    right:           0,
+    padding:         SPACING.xl,
+    backgroundColor: COLORS.bg,
+    borderTopWidth:  1,
+    borderTopColor:  COLORS.border,
+  },
 });

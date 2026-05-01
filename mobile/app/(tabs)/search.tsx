@@ -1,175 +1,165 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TextInput,
-  FlatList, TouchableOpacity, ActivityIndicator,
-  StatusBar, Keyboard,
+  View, Text, StyleSheet, FlatList,
+  TouchableOpacity, ActivityIndicator,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
-import { Colors } from '../../src/theme/colors';
-import { medicinesApi } from '../../src/api/medicines.api';
-import { MedicineCard } from '../../src/components/ui/MedicineCard';
-import { EmptyState } from '../../src/components/ui/EmptyState';
+import { Input, Card } from '@/components/ui';
+import { medicinesApi } from '@/services/api';
+import { useCartStore } from '@/stores/cart.store';
+import { COLORS, FONT_SIZE, SPACING, RADIUS } from '@/constants';
 
-const POPULAR = [
-  'Paracetamol', 'Amoxicillin', 'Metformin',
-  'Atorvastatin', 'Omeprazole', 'Cetirizine',
-];
+function useDebounce<T>(value: T, delay = 400): T {
+  const [debounced, setDebounced] = useState(value);
+  useState(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  });
+  return debounced;
+}
 
 export default function SearchScreen() {
-  const router   = useRouter();
-  const params   = useLocalSearchParams<{ q?: string }>();
+  const { category } = useLocalSearchParams<{ category?: string }>();
+  const [query, setQuery] = useState(category ?? '');
+  const debouncedQuery    = useDebounce(query, 400);
+  const addItem           = useCartStore((s) => s.addItem);
 
-  const [query,    setQuery]    = useState(params.q || '');
-  const [debouncedQ, setDebounced] = useState(query);
-  const inputRef = useRef<TextInput>(null);
-
-  // Debounce 400ms
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(query.trim()), 400);
-    return () => clearTimeout(t);
-  }, [query]);
-
-  // Pre-fill from navigation params
-  useEffect(() => {
-    if (params.q) { setQuery(params.q); setDebounced(params.q); }
-  }, [params.q]);
-
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey:  ['medicines-search', debouncedQ],
-    queryFn:   () => medicinesApi.search(debouncedQ).then((r) => r.data.data),
-    enabled:   debouncedQ.length >= 2,
-    staleTime: 1000 * 60 * 2,
+  const { data, isFetching } = useQuery({
+    queryKey:  ['medicines', 'search', debouncedQuery],
+    queryFn:   () => medicinesApi.search(debouncedQuery).then((r) => r.data.data ?? []),
+    enabled:   debouncedQuery.length >= 2,
+    staleTime: 1000 * 30,
   });
 
-  const medicines: any[] = data?.medicines || [];
-  const showLoading = (isLoading || isFetching) && debouncedQ.length >= 2;
+  const renderItem = useCallback(({ item }: { item: any }) => (
+    <TouchableOpacity
+      onPress={() => router.push(`/medicine/${item.id}`)}
+      activeOpacity={0.82}
+    >
+      <Card style={styles.resultCard}>
+        <View style={styles.cardRow}>
+          <View style={styles.cardLeft}>
+            <Text style={styles.medicineName} numberOfLines={1}>{item.name}</Text>
+            <Text style={styles.manufacturer} numberOfLines={1}>{item.manufacturer}</Text>
+            <Text style={styles.form}>{item.form} · {item.strength}</Text>
+          </View>
+          <View style={styles.cardRight}>
+            <Text style={styles.price}>₹{item.price?.toFixed(2)}</Text>
+            {item.mrp && item.mrp > item.price && (
+              <Text style={styles.mrp}>MRP ₹{item.mrp?.toFixed(2)}</Text>
+            )}
+            <TouchableOpacity
+              style={styles.addBtn}
+              onPress={(e) => {
+                e.stopPropagation();
+                addItem({
+                  medicineId:           item.id,
+                  name:                 item.name,
+                  price:                item.price,
+                  imageUrl:             item.imageUrl ?? null,
+                  requiresPrescription: item.requiresPrescription ?? false,
+                });
+              }}
+            >
+              <Text style={styles.addBtnText}>+ Add</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        {item.requiresPrescription && (
+          <View style={styles.rxTag}>
+            <Text style={styles.rxTagText}>Rx Required</Text>
+          </View>
+        )}
+      </Card>
+    </TouchableOpacity>
+  ), [addItem]);
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.bg} />
-
-      {/* ── Search Header ───────────────────────────────────── */}
-      <View style={styles.header}>
-        <View style={styles.searchRow}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput
-            ref={inputRef}
-            style={styles.input}
-            placeholder="Search medicines, brands, generics…"
-            placeholderTextColor={Colors.textMuted}
-            value={query}
-            onChangeText={setQuery}
-            autoFocus
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {query.length > 0 && (
-            <TouchableOpacity onPress={() => { setQuery(''); inputRef.current?.focus(); }}>
-              <Text style={styles.clearBtn}>✕</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* ── Results / States ────────────────────────────────── */}
-      {showLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Searching medicines…</Text>
-        </View>
-
-      ) : debouncedQ.length < 2 ? (
-        // Popular searches
-        <View style={styles.popularSection}>
-          <Text style={styles.popularTitle}>Popular searches</Text>
-          <View style={styles.chips}>
-            {POPULAR.map((term) => (
-              <TouchableOpacity
-                key={term}
-                style={styles.chip}
-                onPress={() => setQuery(term)}
-              >
-                <Text style={styles.chipText}>{term}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={[styles.popularTitle, { marginTop: 24 }]}>💡 How we save you money</Text>
-          <View style={styles.howCard}>
-            <Text style={styles.howText}>
-              Every branded medicine has a{' '}
-              <Text style={{ fontWeight: '700', color: Colors.primary }}>cheaper generic equivalent</Text>
-              {' '}— same molecule, same dosage, same effect. We show you both so you can choose.
-            </Text>
-          </View>
-        </View>
-
-      ) : medicines.length === 0 ? (
-        <EmptyState
-          emoji="💊"
-          title="No medicines found"
-          message={`No results for "${debouncedQ}". Try a generic name like "paracetamol" or brand name like "Crocin".`}
-        />
-
-      ) : (
-        <FlatList
-          data={medicines}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <MedicineCard
-              id={item.id}
-              name={item.name}
-              genericName={item.genericName}
-              brandPrice={item.mrp}
-              genericPrice={item.price}
-              category={item.category}
-              unit={item.unit}
-              inStock={item.inStock}
-            />
-          )}
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
-          keyboardDismissMode="on-drag"
-          ListHeaderComponent={
-            <Text style={styles.resultCount}>
-              {medicines.length} result{medicines.length !== 1 ? 's' : ''} for "{debouncedQ}"
-            </Text>
+    <SafeAreaView style={styles.container}>
+      {/* Search input */}
+      <View style={styles.searchHeader}>
+        <Text style={styles.title}>Search Medicines</Text>
+        <Input
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Medicine name, salt, brand…"
+          autoFocus={!category}
+          containerStyle={styles.input}
+          rightIcon={
+            isFetching
+              ? <ActivityIndicator size="small" color={COLORS.primary} />
+              : undefined
           }
         />
+      </View>
+
+      {/* Results */}
+      {debouncedQuery.length < 2 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyIcon}>🔍</Text>
+          <Text style={styles.emptyText}>Search for any medicine by name, brand, or active ingredient.</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={data ?? []}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={
+            !isFetching
+              ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyIcon}>💊</Text>
+                  <Text style={styles.emptyText}>No results for "{debouncedQuery}"</Text>
+                </View>
+              )
+              : null
+          }
+          showsVerticalScrollIndicator={false}
+        />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: Colors.bg },
-  header:         { paddingTop: (StatusBar.currentHeight || 44) + 8,
-                    paddingHorizontal: 16, paddingBottom: 12,
-                    backgroundColor: Colors.surface,
-                    borderBottomWidth: 1, borderBottomColor: Colors.divider },
-  searchRow:      { flexDirection: 'row', alignItems: 'center', gap: 10,
-                    backgroundColor: Colors.surfaceOffset, borderRadius: 14,
-                    paddingHorizontal: 14, paddingVertical: 12,
-                    borderWidth: 1, borderColor: Colors.border },
-  searchIcon:     { fontSize: 15 },
-  input:          { flex: 1, fontSize: 15, color: Colors.text, fontWeight: '500' },
-  clearBtn:       { fontSize: 13, color: Colors.textMuted, padding: 4 },
-  center:         { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
-  loadingText:    { fontSize: 14, color: Colors.textMuted },
-  list:           { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 40 },
-  resultCount:    { fontSize: 13, color: Colors.textMuted, marginBottom: 12, fontWeight: '500' },
-  popularSection: { padding: 20 },
-  popularTitle:   { fontSize: 15, fontWeight: '700', color: Colors.text, marginBottom: 12 },
-  chips:          { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip:           { backgroundColor: Colors.surface, borderRadius: 20,
-                    borderWidth: 1, borderColor: Colors.border,
-                    paddingHorizontal: 14, paddingVertical: 8 },
-  chipText:       { fontSize: 13, color: Colors.text, fontWeight: '500' },
-  howCard:        { backgroundColor: Colors.primary + '0f', borderRadius: 14,
-                    borderWidth: 1, borderColor: Colors.primaryLight,
-                    padding: 16 },
-  howText:        { fontSize: 14, color: Colors.text, lineHeight: 22 },
+  container:    { flex: 1, backgroundColor: COLORS.bg },
+  searchHeader: { padding: SPACING.xl, gap: SPACING.md },
+  title:        { fontSize: FONT_SIZE.xl, fontWeight: '700', color: COLORS.text },
+  input:        {},
+  list:         { padding: SPACING.xl, gap: SPACING.sm },
+  resultCard:   { padding: SPACING.md },
+  cardRow:      { flexDirection: 'row', justifyContent: 'space-between', gap: SPACING.md },
+  cardLeft:     { flex: 1, gap: 2 },
+  cardRight:    { alignItems: 'flex-end', gap: SPACING.xs },
+  medicineName: { fontSize: FONT_SIZE.base, fontWeight: '700', color: COLORS.text },
+  manufacturer: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  form:         { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  price:        { fontSize: FONT_SIZE.base, fontWeight: '700', color: COLORS.primary },
+  mrp: {
+    fontSize:         FONT_SIZE.xs,
+    color:            COLORS.textFaint,
+    textDecorationLine: 'line-through',
+  },
+  addBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical:  4,
+    borderRadius:    RADIUS.sm,
+  },
+  addBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.white, fontWeight: '600' },
+  rxTag: {
+    marginTop:        SPACING.xs,
+    alignSelf:        'flex-start',
+    backgroundColor:  COLORS.warning + '22',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical:  2,
+    borderRadius:     RADIUS.sm,
+  },
+  rxTagText:  { fontSize: FONT_SIZE.xs, color: COLORS.warning, fontWeight: '600' },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.xxxl, gap: SPACING.md },
+  emptyIcon:  { fontSize: 48 },
+  emptyText:  { fontSize: FONT_SIZE.base, color: COLORS.textMuted, textAlign: 'center', lineHeight: 22 },
 });
