@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/VaidyaMarg-वैद्यमार्ग-01696f?style=for-the-badge&labelColor=0f3638&color=01696f" alt="VaidyaMarg" height="40"/>
+<img src="https://img.shields.io/badge/VaidyaMarg-वैद्यमार्ग%20%7C%20ভৈদ্যমার্গ-01696f?style=for-the-badge&labelColor=0f3638&color=01696f" alt="VaidyaMarg" height="40"/>
 
-# VAIDYAMARG — वैद्यमार्ग
+# VAIDYAMARG — वैद्यमार्ग — ভৈদ্যমার্গ
 ### *The Way of the Healer*
 
 **Affordable Medicine for Every Indian — Powered by AI**
@@ -17,7 +17,7 @@
 
 ---
 
-> *“Branded medicine at Rs. 450? The same generic costs Rs. 65. VaidyaMarg bridges that gap.”*
+> *"Branded medicine at Rs. 450? The same generic costs Rs. 65. VaidyaMarg bridges that gap."*
 
 [Download App](#) · [Web Portal](#) · [Documentation](#) · [Report Bug](../../issues) · [Request Feature](../../issues)
 
@@ -47,7 +47,7 @@
 
 ## About the Project
 
-**VaidyaMarg** (वैद्यमार्ग) is an AI-powered affordable medicine delivery platform built for India. The name means *The Way of the Healer* in Sanskrit — a path that connects patients to WHO-GMP certified generic medicines, delivered to their doorstep.
+**VaidyaMarg** (वैद्यमार्ग / ভৈদ্যমার্গ) is an AI-powered affordable medicine delivery platform built for India. The name means *The Way of the Healer* in Sanskrit — a path that connects patients to WHO-GMP certified generic medicines, delivered to their doorstep.
 
 In India, branded medicines cost **3–10x more** than their generic equivalents — for the exact same molecule, the same efficacy, the same therapeutic outcome. VaidyaMarg exists to fix that.
 
@@ -65,7 +65,7 @@ In India, branded medicines cost **3–10x more** than their generic equivalents
 - Most patients are unaware that generic alternatives exist
 - Prescription management is entirely paper-based and disorganised
 - Rural and Tier 2/3 cities have limited access to quality pharmacies
-- No single platform provides a transparent branded vs. generic price comparison
+- No single platform provides a transparent branded vs. generic price comparison
 
 ---
 
@@ -87,7 +87,7 @@ VaidyaMarg addresses the problem in three steps:
 
 - **Prescription Upload** — Photograph a prescription; the AI reads it automatically
 - **Smart Medicine Search** — Search by brand name, view generic alternatives side by side
-- **Price Comparison** — Real-time branded vs. generic price difference
+- **Price Comparison** — Real-time branded vs. generic price difference
 - **Easy Ordering** — Add to cart and checkout in under 60 seconds
 - **Real-time Order Tracking** — Live delivery status updates via Socket.io
 - **Refill Reminders** — Monthly reminders for chronic patients (diabetes, hypertension, thyroid)
@@ -135,7 +135,7 @@ VaidyaMarg addresses the problem in three steps:
 | Node.js + NestJS | Core REST API — orders, users, medicines |
 | Prisma ORM | PostgreSQL schema management and queries |
 | Socket.io | Real-time order tracking |
-| JWT + OTP (Twilio) | Secure authentication — Twilio is the sole OTP/SMS provider |
+| JWT + OTP (MSG91) | Secure authentication — MSG91 is the sole OTP/SMS provider |
 | Bull + Redis | Background job queue for reminders and notifications |
 
 ### OCR Microservice
@@ -162,7 +162,7 @@ VaidyaMarg addresses the problem in three steps:
 |---|---|
 | Razorpay | Payments — UPI, Cards, COD (India-first) |
 | Firebase Cloud Messaging | Push notifications (Android + iOS) |
-| Twilio | OTP verification and SMS alerts |
+| MSG91 | OTP verification and SMS alerts |
 
 ### DevOps and Infrastructure
 
@@ -199,7 +199,7 @@ VaidyaMarg addresses the problem in three steps:
          |
 +--------v--------------------------------------------+
 |               EXTERNAL SERVICES                     |
-|   Razorpay  |  Twilio  |  FCM  |  Google Vision     |
+|   Razorpay  |  MSG91  |  FCM  |  Google Vision      |
 +-----------------------------------------------------+
 ```
 
@@ -290,10 +290,10 @@ REDIS_URL=redis://localhost:6379
 # Auth
 JWT_SECRET=your_32_char_minimum_secret
 
-# OTP / SMS (Twilio)
-TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxx
-TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_PHONE_NUMBER=+1XXXXXXXXXX
+# OTP / SMS (MSG91)
+MSG91_AUTH_KEY=your_msg91_auth_key
+MSG91_TEMPLATE_ID=your_msg91_template_id
+MSG91_SENDER_ID=VDYMRG
 
 # Payments
 RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxx
@@ -303,9 +303,7 @@ RAZORPAY_KEY_SECRET=your_razorpay_key_secret
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 
 # Push notifications
-FIREBASE_PROJECT_ID=your_project_id
-FIREBASE_CLIENT_EMAIL=firebase-adminsdk@your-project.iam.gserviceaccount.com
-FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+FIREBASE_SERVICE_ACCOUNT_JSON=
 ```
 
 ---
@@ -318,14 +316,14 @@ VAIDYAMARG/
 +-- backend/                        # Node.js + NestJS REST API
 |   +-- src/
 |   |   +-- modules/
-|   |   |   +-- auth/               # JWT authentication, OTP (Twilio)
+|   |   |   +-- auth/               # JWT authentication, OTP (MSG91)
 |   |   |   +-- users/              # User management + FCM token registration
 |   |   |   +-- medicines/          # Medicine catalogue and search
 |   |   |   +-- orders/             # Order lifecycle + Socket.io events
 |   |   |   +-- prescriptions/      # Upload, Cloudinary, OCR callback, verification
 |   |   |   +-- pharmacy/           # Admin dashboard stats + revenue/orders charts
 |   |   |   +-- partners/           # Pharmacy partner onboarding
-|   |   |   +-- notifications/      # FCM push + Twilio SMS + cron reminders
+|   |   |   +-- notifications/      # FCM push + MSG91 SMS + cron reminders
 |   |   |   +-- reminders/          # Refill reminder CRUD
 |   +-- prisma/                     # Schema, migrations, seed.ts
 |
@@ -385,7 +383,7 @@ Interactive Swagger docs available at `http://localhost:3000/api/docs` when runn
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/auth/send-otp` | Send OTP via Twilio SMS |
+| POST | `/auth/send-otp` | Send OTP via MSG91 SMS |
 | POST | `/auth/verify-otp` | Verify OTP and receive JWT pair |
 | POST | `/auth/refresh` | Refresh access token |
 
@@ -395,14 +393,14 @@ Interactive Swagger docs available at `http://localhost:3000/api/docs` when runn
 |---|---|---|
 | GET | `/medicines/search?q={name}` | Search medicines by name |
 | GET | `/medicines/{id}` | Medicine details and generic alternatives |
-| GET | `/medicines/compare?brand={name}` | Compare brand vs. generic price |
+| GET | `/medicines/compare?brand={name}` | Compare brand vs. generic price |
 
 ### Prescriptions
 
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/prescriptions/upload` | Upload prescription image (multipart) |
-| GET | `/prescriptions/my` | Authenticated user’s prescription history |
+| GET | `/prescriptions/my` | Authenticated user's prescription history |
 | GET | `/prescriptions/{id}` | Single prescription with signed image URL |
 | PATCH | `/prescriptions/{id}/verify` | Pharmacist: approve or reject |
 | POST | `/prescriptions/{id}/ocr` | Trigger async OCR processing |
@@ -415,7 +413,7 @@ Interactive Swagger docs available at `http://localhost:3000/api/docs` when runn
 |---|---|---|
 | POST | `/orders` | Place a new order |
 | GET | `/orders/{id}` | Order details |
-| GET | `/orders/my` | Authenticated user’s order history |
+| GET | `/orders/my` | Authenticated user's order history |
 | PATCH | `/orders/{id}/cancel` | Cancel an order |
 | PATCH | `/orders/{id}/status` | Partner/Admin: advance order status |
 
@@ -444,7 +442,7 @@ Interactive Swagger docs available at `http://localhost:3000/api/docs` when runn
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/notifications` | User’s notification list (paginated) |
+| GET | `/notifications` | User's notification list (paginated) |
 | PATCH | `/notifications/{id}/read` | Mark notification as read |
 | PATCH | `/notifications/read-all` | Mark all as read |
 
@@ -472,16 +470,16 @@ Interactive Swagger docs available at `http://localhost:3000/api/docs` when runn
 
 ### Phase 1 — MVP (Month 1–2) ✅
 - [x] Project architecture and monorepo setup
-- [x] User authentication (Phone OTP via Twilio + JWT)
+- [x] User authentication (Phone OTP via MSG91 + JWT)
 - [x] Medicine catalogue and search (20 real Indian medicines)
-- [x] Generic vs. brand price comparison
+- [x] Generic vs. brand price comparison
 - [x] Order lifecycle management
 - [x] Razorpay payment integration
 
 ### Phase 2 — Core Features (Month 3–4) ✅
 - [x] Prescription upload and Cloudinary storage
 - [x] OCR prescription reader (Google Vision + Tesseract fallback + preprocessor)
-- [x] Push notifications (Firebase Cloud Messaging + Twilio SMS)
+- [x] Push notifications (Firebase Cloud Messaging + MSG91 SMS)
 - [x] Refill reminders for chronic patients (NestJS cron scheduler, daily 08:00 IST)
 - [x] Admin dashboard — KPI stats + revenue/orders charts
 - [x] Admin orders and users management endpoints
@@ -512,7 +510,7 @@ Interactive Swagger docs available at `http://localhost:3000/api/docs` when runn
 | Revenue Stream | Description | Estimated Margin |
 |---|---|---|
 | Generic Medicine Sales | Sourced from manufacturers, sold at 60–80% below brand price | 25–40% |
-| Delivery Fee | Rs. 20–49 per order; free above Rs. 500 | Direct revenue |
+| Delivery Fee | Rs. 20–49 per order; free above Rs. 500 | Direct revenue |
 | Pharmacy Commission | 8–12% commission per order fulfilled by a partner pharmacy | Scalable |
 | Lab Test Referral | Referral fee from diagnostic lab partnerships | 10–15% |
 | Subscription Plan | Chronic patient plan — automatic refills + priority delivery | Recurring |
