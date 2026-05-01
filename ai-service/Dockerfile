@@ -1,32 +1,19 @@
-# ─── Python AI / OCR Service ──────────────────────────────────────────────
+# ai-service — placeholder for future ML recommendation service
+# This Dockerfile ensures `docker compose build` completes without error.
+# Replace with real service code when AI recommendation feature is built.
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for Tesseract OCR
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    tesseract-ocr-hin \
-    libtesseract-dev \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
+# Install minimal dependencies for the health stub
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download spaCy model
-RUN python -m spacy download en_core_web_sm
-
-# Copy app
-COPY . .
-
-# Security: non-root user
-RUN adduser --disabled-password --gecos '' appuser
-USER appuser
+COPY main.py .
 
 EXPOSE 8001
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
