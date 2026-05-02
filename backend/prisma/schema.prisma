@@ -18,14 +18,13 @@ model User {
   phone      String   @unique
   name       String?
   email      String?  @unique
-  address    String?
-  city       String?
-  state      String?
-  pincode    String?
   role       Role     @default(PATIENT)
+  avatar     String?
+  dateOfBirth DateTime?
+  gender     String?
   isVerified Boolean  @default(false)
   isActive   Boolean  @default(true)
-  fcmToken   String?
+  fcmToken   String?  @map("fcm_token")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -33,6 +32,8 @@ model User {
   prescriptions   Prescription[]
   notifications   Notification[]
   refillReminders RefillReminder[]
+  addresses       Address[]
+  healthRecords   HealthRecord[]
   pharmacy        Pharmacy?          // if role = PHARMACIST, their pharmacy
 
   @@map("users")
@@ -45,6 +46,49 @@ enum Role {
 }
 
 // ============================================================
+// ADDRESS
+// ============================================================
+model Address {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String?  // e.g. "Home", "Work"
+  line1     String
+  line2     String?
+  city      String
+  state     String
+  pincode   String
+  landmark  String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders    Order[]
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// ============================================================
+// HEALTH RECORD
+// ============================================================
+model HealthRecord {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String   // ALLERGY | CONDITION | SURGERY | MEDICATION
+  name        String
+  details     String?
+  severity    String?  // MILD | MODERATE | SEVERE
+  diagnosedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@map("health_records")
+}
+
+// ============================================================
 // PHARMACY PARTNER
 // ============================================================
 model Pharmacy {
@@ -52,9 +96,8 @@ model Pharmacy {
   ownerId          String          @unique
   owner            User            @relation(fields: [ownerId], references: [id])
 
-  // Business details
   name             String
-  licenseNumber    String          @unique  // Drug license
+  licenseNumber    String          @unique
   gstNumber        String?
   email            String?         @unique
   phone            String
@@ -63,22 +106,19 @@ model Pharmacy {
   state            String
   pincode          String
 
-  // Verification
   status           PharmacyStatus  @default(PENDING)
   rejectionReason  String?
-  approvedById     String?         // Admin who approved
+  approvedById     String?
   approvedAt       DateTime?
 
-  // Documents (Cloudinary URLs)
   drugLicenseUrl   String?
   gstCertUrl       String?
-  ownerIdUrl       String?         // Aadhaar / PAN
+  ownerIdUrl       String?
 
-  // Operations
   isActive         Boolean         @default(false)
-  operatingHours   String?         // e.g. "09:00-21:00"
-  deliveryRadius   Int?            // km
-  commissionRate   Float           @default(10)  // % commission VaidyaMarg takes
+  operatingHours   String?
+  deliveryRadius   Int?
+  commissionRate   Float           @default(10)
 
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
@@ -89,10 +129,10 @@ model Pharmacy {
 }
 
 enum PharmacyStatus {
-  PENDING    // Onboarding submitted, awaiting admin review
-  APPROVED   // Live partner
-  REJECTED   // Rejected with reason
-  SUSPENDED  // Temporarily suspended
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
 }
 
 // ============================================================
@@ -102,10 +142,10 @@ model PharmacyEarning {
   id           String   @id @default(cuid())
   pharmacyId   String
   pharmacy     Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
-  orderId      String   @unique  // one earning row per order
+  orderId      String   @unique
   orderAmount  Float
-  commission   Float    // VaidyaMarg cut (commissionRate % of orderAmount)
-  netEarning   Float    // orderAmount - commission
+  commission   Float
+  netEarning   Float
   settledAt    DateTime?
   createdAt    DateTime @default(now())
 
@@ -148,11 +188,14 @@ model Order {
   id              String        @id @default(cuid())
   userId          String
   user            User          @relation(fields: [userId], references: [id])
+  addressId       String?
+  address         Address?      @relation(fields: [addressId], references: [id])
   prescriptionId  String?
   prescription    Prescription? @relation(fields: [prescriptionId], references: [id])
   status          OrderStatus   @default(PENDING)
   totalAmount     Float
-  deliveryAddress String
+  genericSavings  Float         @default(0)  @map("generic_savings")
+  deliveryAddress String        // snapshot of address at order time
   paymentStatus   PaymentStatus @default(PENDING)
   paymentId       String?
   notes           String?
