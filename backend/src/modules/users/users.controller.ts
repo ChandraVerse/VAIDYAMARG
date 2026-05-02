@@ -44,6 +44,24 @@ export class UsersController {
     return this.usersService.updateProfile(user.id, dto);
   }
 
+  // ─── FCM Push Token ────────────────────────────────────────────────────────
+  /**
+   * PATCH /api/v1/users/me/fcm-token
+   *
+   * Called by useNotifications() on the mobile app after obtaining
+   * an Expo push token / native FCM token. Persists the token so the
+   * backend can send targeted push notifications to this device.
+   */
+  @Patch('me/fcm-token')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Register or refresh FCM push token for this device' })
+  async registerFcmToken(
+    @CurrentUser() user: { id: string },
+    @Body('token') token: string,
+  ) {
+    return this.usersService.registerFcmToken(user.id, token);
+  }
+
   // ─── Addresses ─────────────────────────────────────────────────────────────
   @Get('addresses')
   @ApiOperation({ summary: 'Get all my saved addresses' })

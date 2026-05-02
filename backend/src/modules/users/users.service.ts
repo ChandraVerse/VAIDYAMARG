@@ -42,7 +42,6 @@ export class UsersService {
 
   // ─── Update Profile ─────────────────────────────────────────────────────────
   async updateProfile(userId: string, dto: UpdateProfileDto) {
-    // Check email uniqueness if being updated
     if (dto.email) {
       const existing = await this.prisma.user.findFirst({
         where: { email: dto.email, NOT: { id: userId } },
@@ -68,6 +67,24 @@ export class UsersService {
     return { success: true, message: 'Profile updated', data: updated };
   }
 
+  // ─── FCM Push Token ─────────────────────────────────────────────────────────
+  /**
+   * Upserts the FCM / Expo push token for the user's current device.
+   * Called by PATCH /api/v1/users/me/fcm-token from the mobile app.
+   *
+   * Requires the User model to have a `fcmToken String?` field in schema.prisma.
+   * If the field is missing, add:
+   *   fcmToken  String?   @map("fcm_token")
+   * then run: npx prisma migrate dev --name add_fcm_token
+   */
+  async registerFcmToken(userId: string, token: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { fcmToken: token },
+    });
+    return { success: true, message: 'FCM token registered' };
+  }
+
   // ─── Addresses ──────────────────────────────────────────────────────────────
   async getAddresses(userId: string) {
     const addresses = await this.prisma.address.findMany({
@@ -78,7 +95,6 @@ export class UsersService {
   }
 
   async addAddress(userId: string, dto: AddAddressDto) {
-    // If this is first address or marked default, unset other defaults
     if (dto.isDefault) {
       await this.prisma.address.updateMany({
         where: { userId },
@@ -108,7 +124,6 @@ export class UsersService {
     if (!address) throw new NotFoundException('Address not found');
     if (address.userId !== userId) throw new ForbiddenException('Access denied');
 
-    // Unset all, then set this one
     await this.prisma.address.updateMany({
       where: { userId },
       data: { isDefault: false },
@@ -143,7 +158,7 @@ export class UsersService {
     const record = await this.prisma.healthRecord.create({
       data: {
         userId,
-        type: dto.type,        // ALLERGY | CONDITION | SURGERY | MEDICATION
+        type: dto.type,
         name: dto.name,
         details: dto.details || null,
         severity: dto.severity || null,
@@ -184,7 +199,6 @@ export class UsersService {
       this.prisma.address.count({ where: { userId } }),
     ]);
 
-    // Calculate total savings
     const allOrders = await this.prisma.order.findMany({
       where: { patientId: userId, status: 'DELIVERED' },
       select: { genericSavings: true },
