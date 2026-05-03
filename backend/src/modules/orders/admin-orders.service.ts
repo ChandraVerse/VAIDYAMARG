@@ -56,8 +56,8 @@ export class AdminOrdersService {
       where: { id },
       data:  { status: status as any },
     });
-    // Push real-time update to patient
-    this.gateway.notifyOrderUpdate(order.userId, order.id, status);
+    // emitOrderUpdate(orderId, userId, status) — matches OrderGateway signature
+    this.gateway.emitOrderUpdate(order.id, order.userId, status);
     return { success: true, data: order };
   }
 }
