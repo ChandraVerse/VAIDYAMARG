@@ -7,16 +7,17 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
-import { AuthModule } from './modules/auth/auth.module';
-import { UsersModule } from './modules/users/users.module';
-import { MedicinesModule } from './modules/medicines/medicines.module';
-import { OrdersModule } from './modules/orders/orders.module';
+import { AuthModule }          from './modules/auth/auth.module';
+import { UsersModule }         from './modules/users/users.module';
+import { MedicinesModule }     from './modules/medicines/medicines.module';
+import { OrdersModule }        from './modules/orders/orders.module';
 import { PrescriptionsModule } from './modules/prescriptions/prescriptions.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
-import { PharmacyModule } from './modules/pharmacy/pharmacy.module';
-import { RemindersModule } from './modules/reminders/reminders.module';
-import { PartnersModule } from './modules/partners/partners.module';
-import { PrismaModule } from './prisma/prisma.module';
+import { PharmacyModule }      from './modules/pharmacy/pharmacy.module';
+import { RemindersModule }     from './modules/reminders/reminders.module';
+import { PartnersModule }      from './modules/partners/partners.module';
+import { AdminModule }         from './modules/admin/admin.module';
+import { PrismaModule }        from './prisma/prisma.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { PrismaModule } from './prisma/prisma.module';
     NotificationsModule,
     PharmacyModule,
     RemindersModule,
+    AdminModule,
     PartnersModule,      // Phase 3 — partner onboarding + analytics + earnings
   ],
   controllers: [AppController],
