@@ -6,48 +6,119 @@ import {
   ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
+import { Logger }         from '@nestjs/common';
 
+/**
+ * Real-time order tracking gateway.
+ *
+ * Namespace : /orders
+ * Transport : Socket.io (requires IoAdapter in main.ts)
+ *
+ * ─── Client events (emit from mobile / admin) ───────────────────────────────
+ *
+ *  join_user_room   { userId: string }
+ *    Join room `user_{userId}` — receives ALL order updates for this user.
+ *    Use this on the "My Orders" list screen.
+ *
+ *  join_order_room  { orderId: string }
+ *    Join room `order_{orderId}` — receives updates for ONE specific order.
+ *    Use this on the "Order Tracking" detail screen.
+ *
+ *  leave_user_room  { userId: string }   — clean teardown on screen unmount
+ *  leave_order_room { orderId: string }  — clean teardown on screen unmount
+ *
+ * ─── Server events (listen on mobile / admin) ───────────────────────────────
+ *
+ *  order_updated  { orderId: string; status: string }
+ *    Emitted whenever an order status changes (admin panel or partner app).
+ */
 @WebSocketGateway({
   namespace: '/orders',
   cors: { origin: '*' },
 })
-export class OrderGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class OrderGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer() server: Server;
   private readonly logger = new Logger(OrderGateway.name);
 
+  afterInit() {
+    this.logger.log('OrderGateway initialised on namespace /orders');
+  }
+
   handleConnection(client: Socket) {
-    this.logger.log(`WS client connected: ${client.id}`);
+    this.logger.debug(`WS connected   : ${client.id} (total: ${this.server.sockets.size})`);
   }
 
   handleDisconnect(client: Socket) {
-    this.logger.log(`WS client disconnected: ${client.id}`);
+    this.logger.debug(`WS disconnected: ${client.id} (total: ${this.server.sockets.size})`);
   }
 
-  /**
-   * Patient sends { userId } to join their personal room.
-   * All order updates for this user are pushed to this room.
-   */
+  // ─── Room management ────────────────────────────────────────────────────────
+
+  /** Patient subscribes to ALL their order updates ("My Orders" list). */
   @SubscribeMessage('join_user_room')
-  handleJoin(
-    @MessageBody() data: { userId: string },
+  handleJoinUser(
+    @MessageBody()    data:   { userId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    client.join(`user_${data.userId}`);
-    this.logger.log(`Socket ${client.id} joined room user_${data.userId}`);
+    const room = `user_${data.userId}`;
+    client.join(room);
+    this.logger.log(`[join] ${client.id} → ${room}`);
+    return { event: 'joined', room };
   }
 
+  /** Patient subscribes to ONE specific order ("Order Tracking" screen). */
+  @SubscribeMessage('join_order_room')
+  handleJoinOrder(
+    @MessageBody()    data:   { orderId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const room = `order_${data.orderId}`;
+    client.join(room);
+    this.logger.log(`[join] ${client.id} → ${room}`);
+    return { event: 'joined', room };
+  }
+
+  /** Leave user room (call on screen unmount to avoid stale listeners). */
+  @SubscribeMessage('leave_user_room')
+  handleLeaveUser(
+    @MessageBody()    data:   { userId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const room = `user_${data.userId}`;
+    client.leave(room);
+    this.logger.log(`[leave] ${client.id} ← ${room}`);
+    return { event: 'left', room };
+  }
+
+  /** Leave order room (call on screen unmount). */
+  @SubscribeMessage('leave_order_room')
+  handleLeaveOrder(
+    @MessageBody()    data:   { orderId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const room = `order_${data.orderId}`;
+    client.leave(room);
+    this.logger.log(`[leave] ${client.id} ← ${room}`);
+    return { event: 'left', room };
+  }
+
+  // ─── Emit ────────────────────────────────────────────────────────────────────
+
   /**
-   * Called by OrdersService whenever an order status changes.
-   * Unified method name used consistently across the codebase.
-   *
-   * Previously named notifyOrderUpdate — renamed to emitOrderUpdate
-   * to match orders.service.ts call sites.
+   * Called by OrdersService and AdminOrdersService whenever an order
+   * status changes. Broadcasts to both rooms simultaneously:
+   *   - user_{userId}   → "My Orders" list screen
+   *   - order_{orderId} → "Order Tracking" detail screen
    */
   emitOrderUpdate(orderId: string, userId: string, status: string) {
-    this.server.to(`user_${userId}`).emit('order_updated', { orderId, status });
-    this.logger.log(`[WS] order_updated → user_${userId}: ${orderId} = ${status}`);
+    const payload = { orderId, status, updatedAt: new Date().toISOString() };
+    this.server.to(`user_${userId}`).emit('order_updated', payload);
+    this.server.to(`order_${orderId}`).emit('order_updated', payload);
+    this.logger.log(`[emit] order_updated → user_${userId} + order_${orderId} | status=${status}`);
   }
 }
