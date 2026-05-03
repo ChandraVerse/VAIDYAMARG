@@ -12,11 +12,12 @@ import { NotificationsService, NotificationType } from '../notifications/notific
 import { RemindersScheduler }  from '../notifications/reminders.scheduler';
 import { OrderGateway }        from './order.gateway';
 
+// Local enum mirrors the Prisma enum (DISPATCHED, not SHIPPED)
 enum OrderStatus {
   PENDING    = 'PENDING',
   CONFIRMED  = 'CONFIRMED',
   PROCESSING = 'PROCESSING',
-  SHIPPED    = 'SHIPPED',
+  DISPATCHED = 'DISPATCHED',   // schema: DISPATCHED (not SHIPPED)
   DELIVERED  = 'DELIVERED',
   CANCELLED  = 'CANCELLED',
 }
@@ -24,7 +25,7 @@ enum OrderStatus {
 const STATUS_TO_NOTIF: Partial<Record<OrderStatus, NotificationType>> = {
   [OrderStatus.CONFIRMED]:  NotificationType.ORDER_CONFIRMED,
   [OrderStatus.PROCESSING]: NotificationType.ORDER_PACKED,
-  [OrderStatus.SHIPPED]:    NotificationType.ORDER_DISPATCHED,
+  [OrderStatus.DISPATCHED]: NotificationType.ORDER_DISPATCHED,
   [OrderStatus.DELIVERED]:  NotificationType.ORDER_DELIVERED,
   [OrderStatus.CANCELLED]:  NotificationType.ORDER_CANCELLED,
 };
@@ -37,13 +38,11 @@ export class OrdersService {
     private readonly prisma:             PrismaService,
     private readonly notifications:      NotificationsService,
     private readonly remindersScheduler: RemindersScheduler,
-    // forwardRef: OrderGateway <-> OrdersService live in the same module;
-    // forwardRef avoids the circular dependency NestJS would otherwise throw.
     @Inject(forwardRef(() => OrderGateway))
     private readonly gateway: OrderGateway,
   ) {}
 
-  // ─── Place Order ─────────────────────────────────────────────────────────────
+  // ─── Place Order ─────────────────────────────────────────────────────────────────────
   async placeOrder(userId: string, dto: {
     addressId:      string;
     items:          { medicineId: string; quantity: number }[];
@@ -63,13 +62,13 @@ export class OrdersService {
     });
 
     const itemsData: {
-      medicineId: string;
-      medicineName: string;
-      quantity: number;
-      unitPrice: number;
-      totalPrice: number;
+      medicineId:   string;
+      quantity:     number;
+      unitPrice:    number;
+      totalPrice:   number;
     }[] = [];
-    let totalAmount = 0;
+    let totalAmount   = 0;
+    let genericSavings = 0;
 
     for (const lineItem of dto.items) {
       const med = medicines.find((m) => m.id === lineItem.medicineId);
@@ -77,34 +76,43 @@ export class OrdersService {
       if (med.stock < lineItem.quantity)
         throw new BadRequestException(`Insufficient stock for ${med.name}`);
 
-      const lineTotal = Number(med.discountedPrice ?? med.mrp) * lineItem.quantity;
-      totalAmount += lineTotal;
+      // Price = genericPrice (the affordable generic cost, not MRP)
+      // Schema fields: mrp | genericPrice | discount  (no discountedPrice)
+      const unitPrice  = Number(med.genericPrice);
+      const lineTotal  = unitPrice * lineItem.quantity;
+      const lineSaving = (Number(med.mrp) - unitPrice) * lineItem.quantity;
+
+      totalAmount    += lineTotal;
+      genericSavings += lineSaving;
 
       itemsData.push({
-        medicineId:   med.id,
-        medicineName: med.name,
-        quantity:     lineItem.quantity,
-        unitPrice:    Number(med.discountedPrice ?? med.mrp),
-        totalPrice:   lineTotal,
+        medicineId: med.id,
+        quantity:   lineItem.quantity,
+        unitPrice,
+        totalPrice: lineTotal,
       });
     }
+
+    // Delivery address snapshot (schema: deliveryAddress String non-null)
+    const deliveryAddress = `${address.line1}${address.line2 ? ', ' + address.line2 : ''}, ${address.city} — ${address.pincode}`;
 
     // Create order + decrement stock in a transaction
     const order = await this.prisma.$transaction(async (tx) => {
       const created = await tx.order.create({
         data: {
           userId,
-          addressId:      dto.addressId,
-          prescriptionId: dto.prescriptionId,
-          status:         OrderStatus.PENDING,
+          addressId:       dto.addressId,
+          prescriptionId:  dto.prescriptionId,
+          status:          OrderStatus.PENDING,
           totalAmount,
-          paymentStatus:  'PENDING',
+          genericSavings,
+          deliveryAddress,
+          paymentStatus:   'PENDING',
           items: { create: itemsData },
         },
         include: { items: true },
       });
 
-      // Decrement stock
       await Promise.all(
         dto.items.map((i) =>
           tx.medicine.update({
@@ -117,7 +125,6 @@ export class OrdersService {
       return created;
     });
 
-    // Push: order placed
     await this.notifications.send(userId, NotificationType.ORDER_PLACED, {
       orderId: order.id,
       amount:  order.totalAmount,
@@ -127,20 +134,20 @@ export class OrdersService {
     return { success: true, data: order };
   }
 
-  // ─── Get User Orders ─────────────────────────────────────────────────────────
+  // ─── Get User Orders ───────────────────────────────────────────────────────────────────
   async getUserOrders(userId: string) {
     const orders = await this.prisma.order.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
+      where:    { userId },
+      orderBy:  { createdAt: 'desc' },
       include: {
-        items:   { select: { medicineName: true, quantity: true, totalPrice: true } },
-        address: { select: { street: true, city: true, pincode: true } },
+        items:   { select: { quantity: true, unitPrice: true, totalPrice: true } },
+        address: { select: { line1: true, city: true, pincode: true } },
       },
     });
     return { success: true, data: orders, total: orders.length };
   }
 
-  // ─── Get Single Order ─────────────────────────────────────────────────────────
+  // ─── Get Single Order ──────────────────────────────────────────────────────────────────
   async getOrderById(userId: string, orderId: string, isAdmin = false) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -159,21 +166,20 @@ export class OrdersService {
     return { success: true, data: order };
   }
 
-  // ─── Update Order Status (admin / partner) ────────────────────────────────────
+  // ─── Update Order Status (admin / partner) ─────────────────────────────────────────────
   async updateOrderStatus(
-    orderId: string,
+    orderId:   string,
     newStatus: OrderStatus,
     updatedBy: 'ADMIN' | 'PARTNER',
   ) {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Order not found');
 
-    // Validate transition
     const ALLOWED_NEXT: Record<OrderStatus, OrderStatus[]> = {
-      [OrderStatus.PENDING]:    [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
+      [OrderStatus.PENDING]:    [OrderStatus.CONFIRMED,  OrderStatus.CANCELLED],
       [OrderStatus.CONFIRMED]:  [OrderStatus.PROCESSING, OrderStatus.CANCELLED],
-      [OrderStatus.PROCESSING]: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
-      [OrderStatus.SHIPPED]:    [OrderStatus.DELIVERED],
+      [OrderStatus.PROCESSING]: [OrderStatus.DISPATCHED, OrderStatus.CANCELLED],
+      [OrderStatus.DISPATCHED]: [OrderStatus.DELIVERED],
       [OrderStatus.DELIVERED]:  [],
       [OrderStatus.CANCELLED]:  [],
     };
@@ -186,26 +192,20 @@ export class OrdersService {
 
     const updated = await this.prisma.order.update({
       where: { id: orderId },
-      data:  {
-        status: newStatus,
-        ...(newStatus === OrderStatus.DELIVERED && { deliveredAt: new Date() }),
-      },
+      data:  { status: newStatus },
     });
 
-    // ── Real-time Socket.io push ──────────────────────────────────────────
-    // Fires BEFORE the FCM push so the mobile app can update the UI
-    // immediately if the patient has the app open, then handle the
-    // background FCM notification if they don't.
+    // Real-time Socket.io push (fires before FCM so app updates instantly if open)
     this.gateway.emitOrderUpdate(order.id, order.userId, newStatus);
 
-    // ── FCM / SMS push notification ───────────────────────────────────────
+    // FCM / SMS push notification
     const notifType = STATUS_TO_NOTIF[newStatus];
     if (notifType) {
       await this.notifications.send(order.userId, notifType, {
         orderId:      order.id,
         amount:       order.totalAmount,
-        savings:      (order as any).savings ?? 0,
-        trackingNote: (order as any).trackingNote ?? '',
+        savings:      (order as any).genericSavings ?? 0,
+        trackingNote: '',
       });
     }
 
@@ -218,7 +218,7 @@ export class OrdersService {
     return { success: true, data: updated };
   }
 
-  // ─── Cancel Order (user self-cancel) ─────────────────────────────────────────
+  // ─── Cancel Order (user self-cancel) ────────────────────────────────────────────────────
   async cancelOrder(userId: string, orderId: string) {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Order not found');
@@ -244,7 +244,6 @@ export class OrdersService {
       ),
     );
 
-    // ── Real-time cancel confirmation ─────────────────────────────────────
     this.gateway.emitOrderUpdate(order.id, order.userId, OrderStatus.CANCELLED);
 
     await this.notifications.send(userId, NotificationType.ORDER_CANCELLED, {
@@ -254,16 +253,11 @@ export class OrdersService {
     return { success: true, data: updated };
   }
 
-  // ─── Admin: list all orders ───────────────────────────────────────────────────
-  async getAllOrders(filters: {
-    status?: string;
-    page?: number;
-    limit?: number;
-  }) {
+  // ─── Admin: list all orders ───────────────────────────────────────────────────────────────
+  async getAllOrders(filters: { status?: string; page?: number; limit?: number }) {
     const page  = filters.page  ?? 1;
     const limit = filters.limit ?? 20;
     const skip  = (page - 1) * limit;
-
     const where = filters.status ? { status: filters.status as OrderStatus } : {};
 
     const [orders, total] = await this.prisma.$transaction([
@@ -275,7 +269,7 @@ export class OrdersService {
         include: {
           user:    { select: { name: true, phone: true } },
           address: { select: { city: true, pincode: true } },
-          items:   { select: { medicineName: true, quantity: true } },
+          items:   { select: { quantity: true, unitPrice: true, totalPrice: true } },
         },
       }),
       this.prisma.order.count({ where }),
