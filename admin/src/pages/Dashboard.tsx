@@ -23,13 +23,14 @@ export function DashboardPage() {
 
   const s = stats?.data?.data ?? {};
   const revData = revenue?.data?.data ?? [];
-  const ordData = orders?.data?.data ?? [];
+  const ordData = orders?.data?.data  ?? [];
 
   const KPI = [
-    { label: 'Total Revenue',  value: fmt(s.totalRevenue ?? 0), icon: IndianRupee,  color: 'text-primary'  },
-    { label: 'Total Orders',   value: s.totalOrders    ?? 0,    icon: ShoppingBag,  color: 'text-blue-600' },
-    { label: 'Pending Rx',     value: s.pendingRx      ?? 0,    icon: FileText,     color: 'text-warning'  },
-    { label: 'Registered Users',value: s.totalUsers    ?? 0,    icon: Users,        color: 'text-success'  },
+    { label: 'Total Revenue',    value: fmt(s.totalRevenue          ?? 0), icon: IndianRupee, color: 'text-primary'  },
+    { label: 'Total Orders',     value: s.totalOrders               ?? 0,  icon: ShoppingBag, color: 'text-blue-600' },
+    // Backend field: pendingPrescriptions (not pendingRx)
+    { label: 'Pending Rx',       value: s.pendingPrescriptions      ?? 0,  icon: FileText,    color: 'text-warning'  },
+    { label: 'Registered Users', value: s.totalUsers                ?? 0,  icon: Users,       color: 'text-success'  },
   ];
 
   if (l1 && l2 && l3) return <Spinner />;
