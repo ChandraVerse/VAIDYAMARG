@@ -9,7 +9,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-01696f.svg?style=flat-square)](LICENSE)
 [![CI](https://github.com/ChandraVerse/VAIDYAMARG/actions/workflows/ci.yml/badge.svg)](https://github.com/ChandraVerse/VAIDYAMARG/actions/workflows/ci.yml)
-[![Status](https://img.shields.io/badge/Status-In%20Development-orange?style=flat-square)]()
+[![Status](https://img.shields.io/badge/Status-Phase%203%20Complete-brightgreen?style=flat-square)]()
 [![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%20%7C%20Web-blue?style=flat-square)]()
 [![Stack](https://img.shields.io/badge/Stack-React%20Native%20%7C%20NestJS%20%7C%20Python-informational?style=flat-square)]()
 [![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen?style=flat-square)]()
@@ -96,7 +96,10 @@ VaidyaMarg addresses the problem in three steps:
 
 ### For Pharmacy Partners
 
-- **Partner Dashboard** — Manage inventory, orders, and earnings
+- **Partner Portal** — Standalone self-service web app for pharmacy partners
+- **Partner Dashboard** — Manage inventory, orders, prescriptions, and earnings
+- **Earnings Dashboard** — View revenue breakdown, payouts, and earnings history
+- **Inventory Management** — Add, update, and track stock levels in real time
 - **Sales Analytics** — Popular medicines, customer insights, revenue trends
 - **API Integration** — Connect to existing POS systems
 
@@ -105,6 +108,7 @@ VaidyaMarg addresses the problem in three steps:
 - **Admin Panel** — Manage users, pharmacies, medicines, and orders
 - **Pharmacist Verification** — Every prescription reviewed before dispatch
 - **Compliance Management** — Drug license, FSSAI, and regulatory tracking
+- **Prescription Detail View** — Full prescription review with approve/reject workflow
 
 ---
 
@@ -119,11 +123,11 @@ VaidyaMarg addresses the problem in three steps:
 | React Navigation | In-app navigation and deep linking |
 | Zustand | Lightweight global state management |
 
-### Admin and Pharmacy Web Dashboard
+### Admin and Pharmacy Web Dashboards
 
 | Technology | Purpose |
 |---|---|
-| Vite + React 18 | Fast SPA build tooling |
+| Vite + React 18 | Fast SPA build tooling (Admin + Partner portals) |
 | Tailwind CSS | Utility-first styling |
 | Recharts | Analytics and data visualisation |
 | Zustand | Global auth and app state |
@@ -181,6 +185,7 @@ VaidyaMarg addresses the problem in three steps:
 +-------------------------------------------------------------+
 |                       CLIENT LAYER                          |
 |   [React Native Mobile App]    [Vite + React Admin Panel]   |
+|                                [Vite + React Partner Portal] |
 +------------------------+------------------------------------+
                          | HTTPS / WSS
 +------------------------v------------------------------------+
@@ -264,6 +269,9 @@ cd mobile && npx expo start
 
 # Admin Dashboard
 cd admin && npm run dev
+
+# Partner Portal
+cd partner && npm run dev
 ```
 
 ### Seed Credentials
@@ -303,7 +311,13 @@ RAZORPAY_KEY_SECRET=your_razorpay_key_secret
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 
 # Push notifications
-FIREBASE_SERVICE_ACCOUNT_JSON=
+FIREBASE_PROJECT_ID=your_project_id
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxx@your-project.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nXXXX\n-----END PRIVATE KEY-----\n"
+
+# OCR Service
+OCR_SERVICE_URL=http://ocr-service:8000
+OCR_API_KEY=change-me-ocr-internal-api-key
 ```
 
 ---
@@ -316,20 +330,30 @@ VAIDYAMARG/
 +-- backend/                        # Node.js + NestJS REST API
 |   +-- src/
 |   |   +-- modules/
+|   |   |   +-- admin/              # Admin orders + users management endpoints
 |   |   |   +-- auth/               # JWT authentication, OTP (MSG91)
-|   |   |   +-- users/              # User management + FCM token registration
 |   |   |   +-- medicines/          # Medicine catalogue and search
-|   |   |   +-- orders/             # Order lifecycle + Socket.io events
-|   |   |   +-- prescriptions/      # Upload, Cloudinary, OCR callback, verification
-|   |   |   +-- pharmacy/           # Admin dashboard stats + revenue/orders charts
-|   |   |   +-- partners/           # Pharmacy partner onboarding
 |   |   |   +-- notifications/      # FCM push + MSG91 SMS + cron reminders
+|   |   |   +-- orders/             # Order lifecycle + Socket.io events
+|   |   |   +-- partners/           # Pharmacy partner onboarding
+|   |   |   +-- pharmacy/           # Admin dashboard stats + revenue/orders charts
+|   |   |   +-- prescriptions/      # Upload, Cloudinary, OCR callback, verification
 |   |   |   +-- reminders/          # Refill reminder CRUD
+|   |   |   +-- users/              # User management + FCM token registration
 |   +-- prisma/                     # Schema, migrations, seed.ts
 |
 +-- mobile/                         # React Native + Expo App
 |   +-- src/
-|   |   +-- screens/                # Auth, Home, Search, Orders, Profile
+|   |   +-- screens/
+|   |   |   +-- auth/               # Login, OTP verification
+|   |   |   +-- cart/               # Shopping cart
+|   |   |   +-- home/               # Home feed
+|   |   |   +-- medicines/          # Search, compare, medicine detail
+|   |   |   +-- orders/             # Order list, order tracking
+|   |   |   +-- partner/            # Partner-facing mobile screens
+|   |   |   +-- prescriptions/      # Upload and prescription history
+|   |   |   +-- profile/            # User profile and settings
+|   |   |   +-- reminders/          # Refill reminder management
 |   |   +-- components/             # Reusable UI components
 |   |   +-- store/                  # Zustand global state
 |   |   +-- api/                    # Typed API service layer
@@ -338,11 +362,20 @@ VAIDYAMARG/
 |
 +-- admin/                          # Vite + React Admin Dashboard
 |   +-- src/
-|   |   +-- pages/                  # Dashboard, Orders, Prescriptions, Analytics,
-|   |   |                           # Partners, PartnerDetail, MedicineForm, Users
+|   |   +-- pages/                  # Dashboard, Orders, OrderDetail, Prescriptions,
+|   |   |                           # PrescriptionDetail, Partners, PartnerDetail,
+|   |   |                           # Analytics, Medicines, MedicineForm, Users, Login
 |   |   +-- components/             # Layout, shared UI
 |   |   +-- store/                  # Zustand auth store
 |   |   +-- api/                    # Axios client with interceptors
+|
++-- partner/                        # Vite + React Partner Self-Service Portal
+|   +-- src/
+|   |   +-- pages/                  # Dashboard, Orders, OrderDetail, Prescriptions,
+|   |   |                           # Inventory, Earnings, Profile, Login
+|   |   +-- components/             # Layout, shared UI
+|   |   +-- services/               # API service layer
+|   |   +-- stores/                 # Zustand auth store
 |
 +-- ocr-service/                    # Python FastAPI OCR Microservice
 |   +-- main.py                     # FastAPI entry point (sync + async endpoints)
@@ -492,15 +525,18 @@ Interactive Swagger docs available at `http://localhost:3000/api/docs` when runn
 - [x] GitHub Actions CI/CD (6 workflows: CI · Docker · Docker Publish · Deploy · CodeQL · Release)
 - [x] Database seed (medicines + demo users + sample orders — `prisma/seed.ts`)
 
-### Phase 3 — Partner Ecosystem (Month 5–6) 🚧
-- [x] Admin prescription verification workflow
+### Phase 3 — Partner Ecosystem (Month 5–6) ✅
+- [x] Admin prescription verification workflow (`PrescriptionDetail.tsx`)
 - [x] Partner registration and onboarding (backend: `partners` module — controller + service)
 - [x] Pharmacy partner admin pages (UI: `Partners.tsx`, `PartnerDetail.tsx`)
 - [x] Analytics dashboard UI (`Analytics.tsx`)
 - [x] Medicine management UI (`Medicines.tsx`, `MedicineForm.tsx`)
-- [ ] Partner self-service onboarding portal (standalone web UI for partners)
-- [ ] Partner earnings dashboard (partner-facing UI)
-- [ ] Inventory management UI for partners
+- [x] Partner self-service portal (`partner/` — standalone Vite + React app)
+- [x] Partner earnings dashboard (`partner/src/pages/Earnings.tsx`)
+- [x] Inventory management UI for partners (`partner/src/pages/Inventory.tsx`)
+- [x] Mobile partner screens (`mobile/src/screens/partner/`)
+- [x] Mobile reminders screens (`mobile/src/screens/reminders/`)
+- [x] Mobile cart screens (`mobile/src/screens/cart/`)
 
 ### Phase 4 — Scale and Intelligence (Month 7+)
 - [ ] Handwritten prescription recognition
