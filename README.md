@@ -114,6 +114,21 @@ VaidyaMarg addresses the problem in three steps:
 
 ## Tech Stack
 
+### Web Application (Patient-Facing)
+
+| Technology | Purpose |
+|---|---|
+| Vite + React 18 + TypeScript | Fast SPA — patient-facing web portal |
+| React Router v6 | Client-side routing and navigation |
+| Tailwind CSS | Utility-first styling |
+| Zustand | Lightweight global state management |
+| TanStack React Query | Server state, caching, and background sync |
+| React Hook Form + Zod | Type-safe form validation |
+| Axios | HTTP client with interceptors |
+| Lucide React | Icon set |
+| React Hot Toast | Toast notifications |
+| date-fns | Date formatting and manipulation |
+
 ### Mobile Application
 
 | Technology | Purpose |
@@ -172,7 +187,7 @@ VaidyaMarg addresses the problem in three steps:
 
 | Technology | Purpose |
 |---|---|
-| Docker + Docker Compose | Containerisation of all 5 services |
+| Docker + Docker Compose | Containerisation of all 6 services |
 | GitHub Actions | CI/CD pipeline — lint, test, build, and deploy on every push |
 | AWS / Railway.app | Cloud hosting (Railway for MVP, AWS for scale) |
 | Nginx | Reverse proxy and load balancer |
@@ -182,25 +197,25 @@ VaidyaMarg addresses the problem in three steps:
 ## System Architecture
 
 ```
-+-------------------------------------------------------------+
-|                       CLIENT LAYER                          |
-|   [React Native Mobile App]    [Vite + React Admin Panel]   |
-|                                [Vite + React Partner Portal] |
-+------------------------+------------------------------------+
-                         | HTTPS / WSS
-+------------------------v------------------------------------+
-|                   API GATEWAY (Nginx)                       |
-+--------+------------------+------------------+-------------+
++-----------------------------------------------------------------------+
+|                          CLIENT LAYER                                 |
+|   [React Native Mobile App]    [Vite + React Web Portal]              |
+|   [Vite + React Admin Panel]   [Vite + React Partner Portal]          |
++------------------------------+----------------------------------------+
+                               | HTTPS / WSS
++------------------------------v----------------------------------------+
+|                        API GATEWAY (Nginx)                            |
++--------+------------------+------------------+------------------------+
          |                  |                  |
 +--------v--------+ +-------v-------+ +--------v-----------+
 |  NestJS REST API| | FastAPI OCR   | | Socket.io /orders  |
 |  :3000          | | Service :8000 | | namespace          |
 +--------+--------+ +-------+-------+ +--------------------+
          |                  |
-+--------v------------------v---------------------------------+
-|                        DATA LAYER                           |
-|        PostgreSQL  |  Redis  |  Cloudinary                 |
-+--------+----------------------------------------------------+
++--------v------------------v-----------------------------------------+
+|                         DATA LAYER                                   |
+|        PostgreSQL  |  Redis  |  Cloudinary                          |
++--------+------------------------------------------------------------+
          |
 +--------v--------------------------------------------+
 |               EXTERNAL SERVICES                     |
@@ -237,7 +252,8 @@ cd VAIDYAMARG
 
 ```bash
 cp .env.example backend/.env
-# Edit backend/.env with your real credentials
+cp web/.env.example web/.env
+# Edit backend/.env and web/.env with your real credentials
 # See the Environment Variables section below for key vars
 ```
 
@@ -266,6 +282,9 @@ cd ocr-service && uvicorn main:app --reload --port 8000
 
 # Mobile App
 cd mobile && npx expo start
+
+# Web Portal (patient-facing)
+cd web && npm run dev
 
 # Admin Dashboard
 cd admin && npm run dev
@@ -318,6 +337,9 @@ FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nXXXX\n-----END PRIVATE KEY---
 # OCR Service
 OCR_SERVICE_URL=http://ocr-service:8000
 OCR_API_KEY=change-me-ocr-internal-api-key
+
+# Web Portal
+VITE_API_URL=http://localhost:3000/v1
 ```
 
 ---
@@ -341,6 +363,20 @@ VAIDYAMARG/
 |   |   |   +-- reminders/          # Refill reminder CRUD
 |   |   |   +-- users/              # User management + FCM token registration
 |   +-- prisma/                     # Schema, migrations, seed.ts
+|
++-- web/                            # Vite + React 18 + TypeScript — Patient Web Portal
+|   +-- src/
+|   |   +-- pages/                  # Home (expandable as more pages are added)
+|   |   +-- components/             # Reusable UI components
+|   |   +-- App.tsx                 # Root app with routing
+|   |   +-- main.tsx                # Entry point
+|   |   +-- index.css               # Global styles + Tailwind directives
+|   +-- index.html                  # HTML entry point
+|   +-- vite.config.ts              # Vite config
+|   +-- tailwind.config.js          # Tailwind theme config
+|   +-- tsconfig.json               # TypeScript config
+|   +-- nginx.conf                  # Production Nginx config for SPA routing
+|   +-- Dockerfile                  # Multi-stage Docker build
 |
 +-- mobile/                         # React Native + Expo App
 |   +-- src/
@@ -399,7 +435,7 @@ VAIDYAMARG/
 |   |   +-- codeql.yml              # Weekly CodeQL security scan
 |   |   +-- release.yml             # Automated release notes on tag push
 |
-+-- docker-compose.yml              # Full stack orchestration (prod)
++-- docker-compose.yml              # Full stack orchestration (prod) — 6 services
 +-- docker-compose.dev.yml          # Development overrides
 +-- .env.example                    # Environment variable template
 +-- Makefile                        # make dev | make seed | make logs | make down
@@ -537,6 +573,7 @@ Interactive Swagger docs available at `http://localhost:3000/api/docs` when runn
 - [x] Mobile partner screens (`mobile/src/screens/partner/`)
 - [x] Mobile reminders screens (`mobile/src/screens/reminders/`)
 - [x] Mobile cart screens (`mobile/src/screens/cart/`)
+- [x] **Patient-facing web portal** (`web/` — Vite + React 18 + TypeScript + TanStack Query + Zod)
 
 ### Phase 4 — Scale and Intelligence (Month 7+)
 - [ ] Handwritten prescription recognition
