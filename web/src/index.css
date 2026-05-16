@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scroll-padding-top: 72px;
+  }
+
+  body {
+    min-height: 100dvh;
+    font-family: 'Satoshi', 'Inter', sans-serif;
+    font-size: 1rem;
+    line-height: 1.6;
+    color: #1a1a1a;
+    background-color: #f8f7f4;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Fraunces', 'Georgia', serif;
+    line-height: 1.15;
+    text-wrap: balance;
+  }
+
+  p, li { text-wrap: pretty; }
+
+  img, picture, video, canvas, svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+  }
+
+  ::selection {
+    background: rgba(1, 105, 111, 0.18);
+    color: #1a1a1a;
+  }
+
+  :focus-visible {
+    outline: 2px solid #01696f;
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(135deg, #01696f, #3aa6a9);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .font-display { font-family: 'Fraunces', 'Georgia', serif; }
+  .font-body    { font-family: 'Satoshi', 'Inter', sans-serif; }
+
+  .bg-mesh {
+    background-image:
+      radial-gradient(at 15% 25%, rgba(1,105,111,0.07) 0px, transparent 55%),
+      radial-gradient(at 85% 75%, rgba(1,105,111,0.05) 0px, transparent 55%);
+  }
+
+  .ease-spring { transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+}
